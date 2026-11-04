@@ -845,6 +845,11 @@ try {
 
   await page.goto(site + "/login");
   await page.getByLabel("Email", { exact: true }).focus();
+  // The real EXE verifies pairing asynchronously. Exercise keyboard selection
+  // after the account suggestions exist, rather than racing the native reply.
+  await page.waitForFunction(() =>
+    Boolean(document.querySelector("#passward-assistant")?.shadowRoot?.querySelector(".account")),
+  );
   await page.keyboard.press("ArrowDown");
   await page.waitForFunction(
     () => document.activeElement?.id === "passward-assistant",
