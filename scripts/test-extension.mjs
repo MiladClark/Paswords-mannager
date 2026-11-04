@@ -844,6 +844,7 @@ try {
   );
 
   await page.goto(site + "/login");
+  await page.bringToFront();
   await page.getByLabel("Email", { exact: true }).focus();
   // The real EXE verifies pairing asynchronously. Exercise keyboard selection
   // after the account suggestions exist, rather than racing the native reply.
