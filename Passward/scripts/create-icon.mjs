@@ -1,8 +1,0 @@
-import { writeFileSync } from "node:fs";
-// Original vector mark: one eye facing four password asterisks. No lettering.
-const stars=[254,310,366,422].map(x=>`<path d="M${x-19} 256h38m-28.5-16.45 19 32.9m-19 0 19-32.9"/>`).join("");
-const mark=`<g fill="none" stroke="#eeefeb" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"><path d="M56 256c28-39 53-60 80-60s52 21 80 60c-28 39-53 60-80 60s-52-21-80-60Z"/><circle cx="136" cy="256" r="23" fill="#eeefeb" stroke="none"/><g stroke-width="10">${stars}</g></g>`;
-writeFileSync(
-  new URL("../app-icon.svg", import.meta.url),
-  `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><rect x="16" y="16" width="480" height="480" rx="112" fill="#252629"/>${mark}</svg>`,
-);

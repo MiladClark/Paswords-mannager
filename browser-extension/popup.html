@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>PassWards</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <img src="icons/48.png" alt="" width="28" height="28" /><strong
+        >PassWards</strong
+      ><span></span
+      ><button id="theme" class="icon" aria-label="Switch theme">◐</button
+      ><button id="language" class="icon" aria-label="Language" hidden>
+        فا
+      </button>
+    </header>
+    <main>
+      <div id="status" role="status"></div>
+      <div id="content"></div>
+      <p id="error" role="alert" hidden></p>
+    </main>
+    <footer>
+      <button id="open" class="text"></button
+      ><button id="refresh" class="text"></button>
+    </footer>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

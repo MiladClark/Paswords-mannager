@@ -1,0 +1,33 @@
+Generated with the built-in ImageGen tool.
+
+INITIAL CONCEPT
+
+Use case: logo-brand.
+Create a finished, exceptional professional logo for a desktop password-manager app named exactly "PassWards" (P a s s W a r d s, final s is essential). This is a new brand concept, not an edit of the previous app icon.
+Brand meaning: PASSWORD + WARDS: secret credentials guarded by a vigilant protective boundary. The visual should communicate a protected secret, calm control, and trust.
+Design a singular highly reduced custom symbol: a bold geometrically constructed W-like guardian enclosure protecting one compact six-spoke password asterisk at its heart. Fuse the ward/enclosure and password motif into one coherent memorable silhouette, not a stock shield with an unrelated icon pasted inside. Strong balanced geometry, intelligent negative space, optically corrected proportions, thick enough to work at 24px. Aim for a symbol an excellent independent identity studio would actually deliver. No padlock, keyhole, eye, fingerprint, literal castle, superhero crest, or complicated illustration.
+Wordmark: exactly "PassWards", carefully kerned bespoke modern sans serif lettering, quiet confident medium weight; subtle angular cuts can echo the symbol while every letter remains plainly legible. No tagline and no other text.
+Composition: ONE primary horizontal logo lockup, symbol left and wordmark right, centered with generous clear space. The logo occupies approximately 78% of image width. Render on a genuine TRANSPARENT background, no presentation board, no cards or mockups. The symbol should be larger than the wordmark cap-height but balanced. Landscape canvas roughly 3:2.
+Colors: deep cool charcoal #202326 for the wordmark and main ward geometry, with one restrained glacial blue #4F8FA8 detail on the protected asterisk if this improves clarity; disciplined flat solid colors only. The symbol must also work as one ink. Crisp immaculate vector-like edges, no gradients, shadows, textures, effects, beveling, lighting, watermarks or stock ornament.
+
+FINAL LOGO REFINEMENT
+
+Use case: logo-brand. Refine the supplied PassWards logo into the final flat professional identity artwork. The reference is the EDIT TARGET, not a mood reference.
+Preserve the core identity concept: a W-like protective ward/enclosure around a six-spoke password asterisk, plus the exact wordmark "PassWards". Keep this one brand and one symbol. Improve optical balance and clarity if needed.
+Critical correction: REMOVE ALL GLOW, all blur, haze, transparency, gradients, shadows and lighting. Everything must be fully opaque, crisp flat solid vector-like shapes. Asterisks must have six evenly balanced arms and generous negative space to remain clearly a password asterisk, not an emergency-services cross.
+Render a finished horizontal brand lockup on a completely solid pale neutral background #F4F5F3. Main emblem and wordmark in dark graphite #202326, protected inner asterisk in restrained teal #39778A. The ward silhouette should read as a purposeful angular W/guardian boundary, not a standard shield template.
+Set the wordmark EXACTLY "PassWards", including final s, in a refined custom modern sans serif, upright and medium weight, with precise kerning and open counters. Avoid heavy rounded italic lettering. Subtle geometric tailoring only.
+One logo, centered, with emblem left and wordmark right; approximately 70% image width, balanced airy clear space. Landscape 1536x1024 or similar. No labels, no slogans, no mockups, no app UI, no framing, no material textures. The result must look like finished identity artwork from a senior graphic designer.
+
+APP ICON
+
+Use case: logo-brand. Create the standalone application icon from the supplied finished PassWards identity. The reference image is the edit target and identity source.
+Extract and faithfully preserve ONLY the emblem at the left: the open-top angular protective W enclosure with the centered six-spoke password asterisk. EXACT same silhouette, inner cuts, relative proportions and asterisk geometry. Remove all lettering. Do not invent a different logo.
+Final composition: square 1024x1024 app-icon master. Completely flat solid dark graphite #202326 background extending to every edge. Put the emblem in off-white #F1F3EF, and the central asterisk in muted teal #6CAABD. Emblem optically centered, approximately 65% of canvas width. Generous even safe margins. No outer border and no rounded-square outline; operating systems can apply their own icon masks.
+Strictly opaque flat color, hard clean vector-like edges, no gradients, no glow, no shadows, no texture, no reflections, no 3D, no labels, no wordmark, no device mockup, no presentation frame. A precise faithful usable app-icon asset.
+LINEAR REVISION
+Created with the built-in ImageGen edit tool from passwards-app-icon-v1.png.
+Prompt: Preserve the W-shaped guardian enclosure and password asterisk. Replace heavy fills with thin, uniform monoline strokes. Near-white enclosure, muted teal asterisk, transparent background, no text, no texture or shadows.
+Reference: passwards-mark-linear-reference.png
+Production: passwards-mark-linear.svg; passwards-app-icon-linear.svg.
+The production vector retains the reference geometry with clean deterministic paths, adapting its enclosure to the app theme. Regenerate with node scripts/create-icon.mjs, then pnpm tauri icon assets/branding/passwards-app-icon-linear.svg --output src-tauri/icons.

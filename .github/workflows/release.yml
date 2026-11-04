@@ -1,0 +1,55 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Verify release version
+        run: node scripts/check-version.mjs --tag $env:GITHUB_REF_NAME
+      - name: Install locked dependencies
+        run: |
+          npm install --global pnpm@12.5.1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          pnpm install --frozen-lockfile
+      - name: Select stable Rust
+        run: rustup default stable
+      - name: Run vault regressions
+        run: cargo test --release --manifest-path src-tauri/Cargo.toml --lib --locked --no-default-features
+      - name: Build standalone EXE
+        run: pnpm build:app
+      - name: Package portable downloads
+        run: pnpm package:release
+      - name: Publish verified release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $taskTag = $env:GITHUB_REF_NAME
+          $taskVersion = $taskTag.Substring(1)
+          $taskBase = "PassWards-$taskVersion-windows-x64"
+          $taskNotes = "docs/releases/$taskTag.md"
+          if (!(Test-Path -LiteralPath $taskNotes)) { throw "Missing release notes: $taskNotes" }
+          gh release view $taskTag --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $taskTag --repo $env:GITHUB_REPOSITORY --verify-tag --draft --title "PassWards $taskTag" --notes-file $taskNotes
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          gh release upload $taskTag "release/$taskBase.exe" "release/$taskBase.zip" 'release/SHA256SUMS.txt' --repo $env:GITHUB_REPOSITORY --clobber
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          gh release edit $taskTag --repo $env:GITHUB_REPOSITORY --draft=false --latest

@@ -1,0 +1,12 @@
+import { readFile } from 'node:fs/promises';
+import assert from 'node:assert/strict';
+const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url)));
+const config = JSON.parse(await readFile(new URL('../src-tauri/tauri.conf.json', import.meta.url)));
+const cargo = (await readFile(new URL('../src-tauri/Cargo.toml', import.meta.url), 'utf8')).replaceAll('\r\n', '\n');
+const lock = (await readFile(new URL('../src-tauri/Cargo.lock', import.meta.url), 'utf8')).replaceAll('\r\n', '\n');
+assert.equal(config.version, pkg.version, 'Tauri and frontend versions must agree');
+assert.equal(cargo.match(/\[package\][\s\S]*?\nversion = "([^"]+)"/)[1], pkg.version, 'Cargo version must agree');
+assert.equal(lock.match(/\[\[package\]\]\nname = "passward"\nversion = "([^"]+)"/)[1], pkg.version, 'Cargo lockfile version must agree');
+const flag = process.argv.indexOf('--tag');
+if (flag >= 0) assert.equal(process.argv[flag + 1], `v${pkg.version}`, 'Release tag must match the app version');
+console.log(`PassWards ${pkg.version}: package, Tauri, Cargo and lockfile versions agree.`);

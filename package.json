@@ -1,0 +1,38 @@
+{
+  "name": "passward",
+  "private": true,
+  "version": "0.3.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build && node scripts/check-bundle.mjs",
+    "build:app": "tauri build --no-bundle",
+    "check:security": "powershell -NoProfile -File scripts/check-security.ps1",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "test:ui": "playwright test",
+    "test:core": "cargo test --manifest-path src-tauri/Cargo.toml --lib --no-default-features",
+    "check:core": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --no-default-features -- -D warnings",
+    "build:extension": "node scripts/build-extension.mjs",
+    "test:extension": "node scripts/test-extension.mjs",
+    "check:version": "node scripts/check-version.mjs",
+    "package:release": "node scripts/package-release.mjs"
+  },
+  "dependencies": {
+    "@phosphor-icons/react": "^2.1.10",
+    "@tauri-apps/api": "^2",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
+    "@playwright/test": "^1.64.1",
+    "@tauri-apps/cli": "^2",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@vitejs/plugin-react": "^6.0.2",
+    "prettier": "^3.9.10",
+    "typescript": "~6.0.3",
+    "vite": "^8.0.16"
+  }
+}
