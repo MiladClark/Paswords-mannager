@@ -845,12 +845,10 @@ try {
 
   await page.goto(site + "/login");
   await page.bringToFront();
+  // The closed-shadow assistant is mounted only after pairing is verified.
+  // Wait for its host before exercising keyboard selection in the login field.
+  await page.waitForSelector("#passward-assistant", { state: "attached" });
   await page.getByLabel("Email", { exact: true }).focus();
-  // The real EXE verifies pairing asynchronously. Exercise keyboard selection
-  // after the account suggestions exist, rather than racing the native reply.
-  await page.waitForFunction(() =>
-    Boolean(document.querySelector("#passward-assistant")?.shadowRoot?.querySelector(".account")),
-  );
   await page.keyboard.press("ArrowDown");
   await page.waitForFunction(
     () => document.activeElement?.id === "passward-assistant",
