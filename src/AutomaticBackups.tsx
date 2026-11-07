@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { type Translate } from "./ui";
+import { CloudSwitch, type Translate } from "./ui";
 interface Info {
   enabled: boolean;
   lastCreated: number;
@@ -9,8 +9,9 @@ interface Props {
   t: Translate;
   run: <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
   onError: (cause: unknown) => void;
+  disabled?: boolean;
 }
-export default function AutomaticBackups({ t, run, onError }: Props) {
+export default function AutomaticBackups({ t, run, onError, disabled = false }: Props) {
   const [info, setInfo] = useState<Info | null>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
@@ -41,16 +42,13 @@ export default function AutomaticBackups({ t, run, onError }: Props) {
   }
   return (
     <div className="automatic-backups">
-      <label className="backup-toggle">
-        <input
-          type="checkbox"
-          checked={info?.enabled ?? false}
-          disabled={!info || busy}
-          onChange={(e) => void configure(e.target.checked)}
-        />
-        <span>{t("automaticBackups")}</span>
-      </label>
-      <p className="field-help">{t("automaticBackupHint")}</p>
+      <CloudSwitch label={t("automaticBackups")} checked={info?.enabled ?? false}
+        disabled={disabled || !info || busy} onChange={(enabled) => void configure(enabled)} />
+      <p className="field-help">{t("settingsAutomaticHint")}</p>
+      <details className="settings-backup-details">
+        <summary>{t("settingsBackupDetails")}</summary>
+        <p className="field-help">{t("automaticBackupHint")}</p>
+      </details>
       {!!info?.retained && (
         <p className="field-help">
           {info.retained} {t("automaticBackupCount")}

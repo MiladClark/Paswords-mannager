@@ -7,6 +7,7 @@ import {
   type FormEvent,
 } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { Channel } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   ArrowLeft,
@@ -24,6 +25,8 @@ import {
   X,
   Sun,
   Moon,
+  ArrowsClockwise,
+  CloudArrowUp,
 } from "@phosphor-icons/react";
 import {
   blankEntry,
@@ -44,6 +47,8 @@ import EntryForm from "./EntryForm";
 import EntryDetail from "./EntryDetail";
 import VaultDialogs, { type Modal } from "./VaultDialogs";
 import SettingsPage from "./SettingsPage";
+import { useCloudSettings, syncStageText, type CloudInfo, type Snapshot, type SyncResult, type SyncStage } from "./CloudBackup";
+import CloudSyncDialog from "./CloudSyncDialog";
 import DestructiveDialog from "./DestructiveDialog";
 import WindowControls from "./WindowControls";
 import BrowserFillDialog, { type BrowserFill } from "./BrowserFillDialog";
@@ -122,7 +127,11 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const settingsButton = useRef<HTMLButtonElement>(null);
   const restoreSettingsFocus = useRef(false);
-  const [modal, setModal] = useState<Modal | "reset" | "delete" | null>(null);
+  const [modal, setModal] = useState<Modal | "reset" | "delete" | "sync" | null>(null);
+  const [cloudSnapshot, setCloudSnapshot] = useState<Snapshot | null>(null);
+  const [cloudPasswordRequired, setCloudPasswordRequired] = useState(false);
+  const [cloudAction, setCloudAction] = useState<"" | "connect" | "check" | "sync">("");
+  const [cloudStage, setCloudStage] = useState<SyncStage>("checking");
   const skipDeleteConfirmation = useRef(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const editorForm = useRef<HTMLFormElement>(null);
@@ -163,6 +172,9 @@ export default function App() {
     setShowSettings(false);
     restoreSettingsFocus.current = false;
     setModal(null);
+    setCloudSnapshot(null);
+    setCloudPasswordRequired(false);
+    setCloudAction("");
     setQuery("");
     setDebounced("");
     setError("");
@@ -205,6 +217,83 @@ export default function App() {
       throw cause;
     }
   }
+  const cloud = useCloudSettings(request, phase === "open");
+  const cloudNeedsSignIn = !cloud.info?.email || cloud.info.issue === "cloudSignInRequired" || cloud.error === "cloudSignInRequired";
+
+  async function performCloudSync(id: string | null, password?: string) {
+    const generation = epoch.current;
+    setBusy(true);
+    setCloudAction("sync");
+    setCloudStage("checking");
+    setError("");
+    try {
+      const progress = native ? new Channel<SyncStage>() : undefined;
+      if (progress) progress.onmessage = (stage) => {
+        if (generation === epoch.current && stage in syncStageText) setCloudStage(stage);
+      };
+      const result = await request<SyncResult>("cloud_sync", { id, password: password ?? null, progress });
+      cloud.setInfo(result.info);
+      closeModal();
+      showVault(true);
+      message("cloudSynced", ` · ${result.imported} ${t("cloudItemsAdded")}`);
+    } catch (cause) {
+      if (cause === "cloudBackupPasswordRequired") setCloudPasswordRequired(true);
+      else {
+        if (cause === "cloudSignInRequired" && cloud.info) cloud.setInfo({ ...cloud.info, issue: cause });
+        fail(cause);
+      }
+    } finally {
+      if (generation === epoch.current) {
+        // A merge can commit before an upload fails; show those local additions too.
+        await securityRefresh();
+        setBusy(false);
+        setCloudAction("");
+      }
+    }
+  }
+
+  async function connectCloudAccount() {
+    const generation = epoch.current;
+    setBusy(true);
+    setCloudAction("connect");
+    setError("");
+    try {
+      cloud.setInfo(await request<CloudInfo>("cloud_connect"));
+      showVault();
+      message("cloudConnected");
+    } catch (cause) {
+      fail(cause);
+    } finally {
+      if (generation === epoch.current) {
+        setBusy(false);
+        setCloudAction("");
+      }
+    }
+  }
+
+  async function prepareCloudSync() {
+    if (cloudNeedsSignIn) return connectCloudAccount();
+    const generation = epoch.current;
+    setBusy(true);
+    setCloudAction("check");
+    setError("");
+    try {
+      const snapshots = await request<Snapshot[]>("cloud_list");
+      const latest = snapshots[0];
+      setCloudPasswordRequired(false);
+      setCloudSnapshot(latest ?? null);
+      if (latest) setModal("sync");
+      else await performCloudSync(null);
+    } catch (cause) {
+      if (cause === "cloudSignInRequired" && cloud.info) cloud.setInfo({ ...cloud.info, issue: cause });
+      fail(cause);
+    } finally {
+      if (generation === epoch.current) {
+        setBusy(false);
+        setCloudAction("");
+      }
+    }
+  }
   useEffect(() => {
     let active = true;
     call<Status>("vault_status")
@@ -240,7 +329,7 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [entry?.id, entry?.protected, entry?.grantExpiresAt, draft]);
   useEffect(() => {
-    if (phase !== "open" || showSettings || modal || draft || busy) return;
+    if (phase !== "open" || modal || busy) return;
     let active = true;
     const poll = () =>
       void Promise.all([
@@ -251,18 +340,22 @@ export default function App() {
           if (active) {
             setBrowserFill(value);
             setBrowserSave(save);
+            if ((value || save) && !draftRef.current) showVault();
+            if (draftRef.current && ((save && save.id !== browserSave?.id) || (value && value.id !== browserFill?.id))) {
+              setToast(tRef.current("browserRequestWaiting"));
+            }
             if (save && save.id !== browserSave?.id) setError("");
             if (value && value.id !== browserFill?.id) setError("");
           }
         })
-        .catch(fail);
+        .catch((cause) => { if (active) fail(cause); });
     poll();
     const timer = setInterval(poll, 1000);
     return () => {
       active = false;
       clearInterval(timer);
     };
-  }, [phase, showSettings, modal, !!draft, busy, browserFill?.id, browserSave?.id, fail]);
+  }, [phase, modal, !!draft, busy, browserFill?.id, browserSave?.id, fail]);
   async function decideBrowserSave(
     allow: boolean,
     secret: string | null,
@@ -271,6 +364,7 @@ export default function App() {
     title: string,
   ) {
     if (!browserSave || busy) return;
+    const generation = epoch.current;
     setBusy(true);
     setError("");
     try {
@@ -286,8 +380,13 @@ export default function App() {
       });
       setBrowserSave(null);
       if (id) {
+        showVault(true);
+        selectedRef.current = id;
+        setSelectedId(id);
+        setEntry(null);
         reload();
-        await select(id);
+        const saved = await request<EntryView>("get_entry", { id });
+        if (selectedRef.current === id) setEntry(saved);
         message(
           browserSave.kind === "update"
             ? "browserLoginUpdated"
@@ -298,11 +397,12 @@ export default function App() {
       if (String(cause) === "browserExpired") setBrowserSave(null);
       fail(cause);
     } finally {
-      setBusy(false);
+      if (generation === epoch.current) setBusy(false);
     }
   }
   async function decideBrowserFill(allow: boolean, secret: string) {
     if (!browserFill || busy) return;
+    const generation = epoch.current;
     setBusy(true);
     setError("");
     try {
@@ -312,11 +412,12 @@ export default function App() {
         secret,
       });
       setBrowserFill(null);
+      if (allow) showVault();
     } catch (cause) {
       if (String(cause) === "browserExpired") setBrowserFill(null);
       fail(cause);
     } finally {
-      setBusy(false);
+      if (generation === epoch.current) setBusy(false);
     }
   }
   useEffect(() => {
@@ -433,9 +534,7 @@ export default function App() {
       if (
         e.key.toLowerCase() === "s" &&
         draftRef.current &&
-        !modal &&
-        !browserFill &&
-        !browserSave
+        !modal
       ) {
         e.preventDefault();
         editorForm.current?.requestSubmit();
@@ -486,6 +585,18 @@ export default function App() {
     restoreSettingsFocus.current = true;
     setShowSettings(false);
     setError("");
+  }
+  function showVault(resetFilters = false) {
+    restoreSettingsFocus.current = false;
+    setShowSettings(false);
+    if (resetFilters) {
+      setQuery("");
+      setDebounced("");
+      setFilter("all");
+      setFolder("");
+      setPageIndex(0);
+      setSort("recent");
+    }
   }
   function quit() {
     if (native)
@@ -798,6 +909,22 @@ export default function App() {
               )}
               {phase === "open" && (
                 <>
+                  {(native || preview) && (
+                    <>
+                      <span className="action-divider cloud-action-divider" aria-hidden="true" />
+                      <button type="button" className="cloud-toolbar-button"
+                        disabled={busy || !!cloud.pending || !cloud.info || showSettings || !!modal || !!browserFill || !!browserSave}
+                        aria-label={t(cloudAction === "connect" ? "cloudWaitingBrowser" : cloudAction === "check" ? "cloudChecking" : cloudAction === "sync" ? "cloudSyncing" : cloudNeedsSignIn ? "cloudConnect" : "cloudSync")}
+                        title={cloudNeedsSignIn ? t("cloudConnect") : `${t("cloudSync")} · ${cloud.info?.email}`}
+                        aria-busy={!!cloudAction}
+                        onClick={() => guard(() => void prepareCloudSync())}>
+                        <span className="cloud-toolbar-icon" key={cloudNeedsSignIn ? "connect" : "sync"} aria-hidden="true">
+                          {cloudAction ? <CircleNotch className="spin" size={17} /> : cloudNeedsSignIn ? <CloudArrowUp size={17} /> : <ArrowsClockwise size={17} />}
+                        </span>
+                        <span className="cloud-toolbar-label">{t(cloudNeedsSignIn ? "cloudConnectShort" : "cloudSyncShort")}</span>
+                      </button>
+                    </>
+                  )}
                   <span className="action-divider" />
                   <button
                     ref={settingsButton}
@@ -866,6 +993,9 @@ export default function App() {
             busy={busy}
             error={modal ? "" : error}
             run={request}
+            cloud={cloud}
+            onCloudAction={() => void prepareCloudSync()}
+            onCloudConnect={() => void connectCloudAccount()}
             onBusy={(value) => {
               if (renderedEpoch === epoch.current) setBusy(value);
             }}
@@ -1170,16 +1300,20 @@ export default function App() {
           </>
         )}
         <MotionPresence key={phase}>
-          {toast && (
+          {(toast || (cloudAction && !modal)) && (
             <div className="toast" role="status">
-              <Check size={16} />
-              <span>{toast}</span>
+              {cloudAction && !modal ? <CircleNotch className="spin" size={16} /> : <Check size={16} />}
+                <span>{cloudAction && !modal ? t(cloudAction === "connect" ? "cloudWaitingBrowser" : cloudAction === "check" ? "cloudChecking" : syncStageText[cloudStage]) : toast}</span>
             </div>
           )}
         </MotionPresence>
         {phase === "open" && (
           <MotionPresence>
-            {modal === "reset" || modal === "delete" ? (
+            {modal === "sync" && cloudSnapshot ? (
+              <CloudSyncDialog snapshot={cloudSnapshot} needsPassword={cloudPasswordRequired}
+                  busy={busy} stage={cloudStage} error={error} t={t} onClose={closeModal}
+                onConfirm={(password) => performCloudSync(cloudSnapshot.id, password)} />
+            ) : modal === "reset" || modal === "delete" ? (
               (modal === "reset" || entry) && <DestructiveDialog
                 key={modal}
                 itemTitle={modal === "delete" ? entry?.title : undefined}
@@ -1189,7 +1323,7 @@ export default function App() {
                 onClose={closeModal}
                 onConfirm={modal === "reset" ? resetLocal : performDelete}
               />
-            ) : modal && (
+            ) : modal && modal !== "sync" && (
               <VaultDialogs
                 key={modal}
                 modal={modal}
@@ -1205,6 +1339,7 @@ export default function App() {
                 onClose={closeModal}
                 onMessage={message}
                 onImported={() => {
+                  if (modal === "import") showVault(true);
                   void securityRefresh().catch(fail);
                 }}
                 onDiscard={() => {
@@ -1221,7 +1356,7 @@ export default function App() {
         )}
         {phase === "open" && (
           <MotionPresence>
-            {browserFill && !showSettings && !modal && (
+            {browserFill && !showSettings && !modal && !draft && (
               <BrowserFillDialog
                 key={browserFill.id}
                 request={browserFill}
@@ -1235,7 +1370,7 @@ export default function App() {
         )}
         {phase === "open" && (
           <MotionPresence>
-            {browserSave && !showSettings && !modal && !browserFill && (
+            {browserSave && !showSettings && !modal && !draft && !browserFill && (
               <BrowserSaveDialog
                 key={browserSave.id}
                 request={browserSave}

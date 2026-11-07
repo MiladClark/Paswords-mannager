@@ -1,10 +1,18 @@
 import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { call, native } from "./api";
+import { ArrowsClockwise, CloudArrowUp } from "@phosphor-icons/react";
+import { call, native, preview } from "./api";
 import { en, type Key } from "./i18n";
 import { CloudSwitch, type Translate } from "./ui";
 
-type Info = { email: string; enabled: boolean; lastBackup: number | null; issue: string | null };
+export type CloudInfo = { email: string; enabled: boolean; lastBackup: number | null; issue: string | null };
+export type Snapshot = { id: string; createdAt: string; size: number };
+export type SyncResult = { imported: number; info: CloudInfo };
+export type SyncStage = "downloading" | "merging" | "preparing" | "checking" | "uploading" | "finishing";
+export const syncStageText: Record<SyncStage, Key> = {
+  downloading: "cloudDownloading", merging: "cloudMerging", preparing: "cloudPreparing",
+  checking: "cloudChecking", uploading: "cloudUploading", finishing: "cloudFinishing",
+};
 
 function cloudErrorText(cause: unknown, t: Translate) {
   return typeof cause === "string" && Object.prototype.hasOwnProperty.call(en, cause) ? t(cause as Key) : t("genericError");
@@ -12,85 +20,87 @@ function cloudErrorText(cause: unknown, t: Translate) {
 
 type Run = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
 
-export function useCloudSettings(request: Run) {
-  const [info, setInfo] = useState<Info | null>(null);
+export function useCloudSettings(request: Run, active = true) {
+  const [info, setInfo] = useState<CloudInfo | null>(null);
   const [pending, setPending] = useState("");
   const [error, setError] = useState<unknown>(null);
 
   useEffect(() => {
-    if (!native) return;
-    let active = true;
-    const refresh = () => void call<Info>("cloud_info").then(
-      (value) => { if (active) setInfo(value); },
-      (cause) => { if (active) setError(cause); },
+    if ((!native && !preview) || !active) return;
+    let mounted = true;
+    const refresh = () => void call<CloudInfo>("cloud_info").then(
+      (value) => { if (mounted) { setInfo(value); setError(null); } },
+      (cause) => { if (mounted) setError(cause); },
     );
     refresh();
-    const subscription = listen("cloud-backup-changed", refresh);
+    const subscription = native ? listen("cloud-backup-changed", refresh) : Promise.resolve(() => {});
     void subscription.catch(() => {});
     return () => {
-      active = false;
+      mounted = false;
       void subscription.then((unlisten) => unlisten()).catch(() => {});
     };
-  }, []);
+  }, [active]);
 
   async function run(command: string, args?: Record<string, unknown>) {
     setPending(command);
     setError(null);
     try {
-      setInfo(await request<Info>(command, args));
+      setInfo(await request<CloudInfo>(command, args));
     } catch (cause) {
-      setError(cause);
+      if (cause !== "stale") setError(cause);
     } finally {
       setPending("");
     }
   }
 
-  return { info, pending, error, run };
+  function acceptInfo(value: CloudInfo) {
+    setInfo(value);
+    setError(null);
+  }
+
+  return { info, pending, error, run, setInfo: acceptInfo };
 }
 
-export function CloudBackupSettings({ t, cloud, busy }: {
+export function CloudBackupSettings({ t, cloud, busy, onAction, onConnect }: {
   t: Translate;
   cloud: ReturnType<typeof useCloudSettings>;
   busy: boolean;
+  onAction: () => void;
+  onConnect: () => void;
 }) {
   const { info, pending, error, run } = cloud;
   const needsSignIn = !info?.email || info.issue === "cloudSignInRequired" || error === "cloudSignInRequired";
   const issue = error ?? info?.issue;
   return (
-    <div className="automatic-backups">
-      <h3>{t("cloudBackup")}</h3>
-      <p className="field-help">{t("cloudSettingsHint")}</p>
+    <section className="settings-cloud" aria-labelledby="settings-cloud-title">
+      <div className="settings-row settings-cloud-heading">
+        <div className="settings-row-copy">
+          <h3 id="settings-cloud-title">DevTune</h3>
+          <p>{needsSignIn ? t("settingsCloudDisconnected") : <bdi>{info?.email}</bdi>}</p>
+        </div>
+        <button type="button" className="primary" disabled={busy || !info} onClick={onAction}>
+          {needsSignIn ? <CloudArrowUp size={16} /> : <ArrowsClockwise size={16} />}
+          {t(needsSignIn ? "cloudConnectShort" : "cloudSyncShort")}
+        </button>
+      </div>
+      <p className="field-help">{t("settingsCloudHint")}</p>
       {!!info?.email && (
-        <>
-          <p className="field-help">{t("cloudAccount")} {info.email}</p>
+        <div className="settings-cloud-options">
           <CloudSwitch label={t("cloudAutomatic")} checked={info.enabled}
             disabled={busy || needsSignIn}
             onChange={(enabled) => void run("cloud_enable", { enabled })} />
-          <p className="field-help">
-            {info.lastBackup
-              ? `${t("cloudLastBackup")} ${new Date(info.lastBackup * 1000).toLocaleString()}`
-              : t("cloudNeverBackedUp")}
-          </p>
-        </>
+          <div className="settings-cloud-footer">
+            <p className="field-help">
+              {info.lastBackup
+                ? <>{t("cloudLastBackup")} <time dateTime={new Date(info.lastBackup * 1000).toISOString()}>{new Date(info.lastBackup * 1000).toLocaleString()}</time></>
+                : t("cloudNeverBackedUp")}
+            </p>
+            <button type="button" className="text-button" disabled={busy} onClick={onConnect}>{t("cloudSwitchAccount")}</button>
+          </div>
+        </div>
       )}
-      <div className="settings-buttons">
-        {needsSignIn ? (
-          <button type="button" className="secondary" disabled={busy || !info}
-            onClick={() => void run("cloud_connect")}>{t("cloudConnect")}</button>
-        ) : (
-          <button type="button" className="secondary" disabled={busy}
-            onClick={() => void run("cloud_backup_now")}>{t("cloudBackupNow")}</button>
-        )}
-        {!!info?.email && (
-          <button type="button" className="settings-link" disabled={busy}
-            onClick={() => void run("cloud_connect")}>{t("cloudSwitchAccount")}</button>
-        )}
-      </div>
-      {pending === "cloud_connect" && <p className="field-help" role="status">
-        {t(info?.email ? "cloudSwitchBrowser" : "cloudWaitingBrowser")}
-      </p>}
-      {pending === "cloud_backup_now" && <p className="field-help" role="status">{t("cloudUploading")}</p>}
+      {!!pending && <p className="field-help" role="status">{t("working")}</p>}
       {!!issue && <p className="form-error" role="alert">{cloudErrorText(issue, t)}</p>}
-    </div>
+    </section>
   );
 }

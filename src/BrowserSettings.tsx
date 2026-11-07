@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Globe, Link, Trash } from "@phosphor-icons/react";
+import { Link, Trash } from "@phosphor-icons/react";
 import type { Translate } from "./ui";
 import ExtensionInstall from "./ExtensionInstall";
 type Connection = { id: string; name: string; createdAt: number };
@@ -13,10 +13,12 @@ export default function BrowserSettings({
   t,
   run,
   onError,
+  disabled = false,
 }: {
   t: Translate;
   run: Run;
   onError: (e: unknown) => void;
+  disabled?: boolean;
 }) {
   const [status, setStatus] = useState<Status>();
   const [pairing, setPairing] = useState<{ code: string; expiresAt: number }>();
@@ -38,7 +40,7 @@ export default function BrowserSettings({
         .then((s) => {
           if (active) setStatus(s);
         })
-        .catch(onError);
+        .catch((cause) => { if (active) onError(cause); });
     refresh();
     const timer = setInterval(() => {
       setNow(Date.now());
@@ -67,34 +69,33 @@ export default function BrowserSettings({
     }
   }
   return (
-    <section>
-      <h2>
-        <Globe size={17} />
-        {t("browsers")}
-      </h2>
-      <p>{t("browserHelp")}</p>
+    <section className="settings-browser">
       <ExtensionInstall t={t} />
       {!status?.available && status && (
         <p className="form-error">{t("browserUnavailable")}</p>
       )}
-      <div className="settings-buttons">
-        <button
-          type="button"
-          className="secondary"
-          disabled={working}
-          onClick={() => void action("install_browser_bridge")}
-        >
-          <Link size={16} />
-          {t(status?.installed ? "repairBrowserBridge" : "enableBrowserBridge")}
-        </button>
-        <button
-          type="button"
-          className="secondary"
-          disabled={working || !status?.installed || !status.available}
-          onClick={() => void action("begin_browser_pairing")}
-        >
-          {t("pairBrowser")}
-        </button>
+      <div className="settings-group">
+        <h3>{t("settingsBrowserConnection")}</h3>
+        <p className="field-help">{t("browserHelp")}</p>
+        <div className="settings-buttons">
+          <button
+            type="button"
+            className="secondary"
+            disabled={disabled || working}
+            onClick={() => void action("install_browser_bridge")}
+          >
+            <Link size={16} />
+            {t(status?.installed ? "repairBrowserBridge" : "enableBrowserBridge")}
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            disabled={disabled || working || !status?.installed || !status.available}
+            onClick={() => void action("begin_browser_pairing")}
+          >
+            {t("pairBrowser")}
+          </button>
+        </div>
       </div>
       {pairing && (
         <div className="browser-pair-code" ref={codeRef} aria-live="polite">
@@ -117,7 +118,7 @@ export default function BrowserSettings({
               <button
                 type="button"
                 className="text-button"
-                disabled={working}
+                disabled={disabled || working}
                 onClick={() => void action("revoke_browser", { id: c.id })}
               >
                 <Trash size={15} />

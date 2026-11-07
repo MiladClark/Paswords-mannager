@@ -10,7 +10,7 @@ use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fs::{File, OpenOptions},
     io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
@@ -805,6 +805,22 @@ impl Vault {
         if self.header()?.is_some() {
             return Err("vaultExists".into());
         }
+        let source = Self::open_cloud_snapshot(path, Some(password), None)?;
+        let header: String = source.conn.query_row("SELECT header FROM meta WHERE id=1", [], |row| row.get(0)).map_err(db_error)?;
+        let mut entries = source.conn.prepare("SELECT id, sealed FROM entries").map_err(db_error)?;
+        let mut rows = entries.query([]).map_err(db_error)?;
+        let tx = self.conn.transaction().map_err(db_error)?;
+        tx.execute("INSERT INTO meta(id, header) VALUES (1, ?1)", [header]).map_err(db_error)?;
+        while let Some(row) = rows.next().map_err(db_error)? {
+            tx.execute("INSERT INTO entries(id, sealed) VALUES (?1, ?2)", params![row.get::<_, String>(0).map_err(db_error)?, row.get::<_, Vec<u8>>(1).map_err(db_error)?]).map_err(db_error)?;
+        }
+        tx.commit().map_err(db_error)?;
+        self.backups.dirty = true;
+        Ok(())
+    }
+    // The downloaded file is temporary: authenticate its complete SQLite bytes
+    // before loading any records, just as for first-device cloud recovery.
+    fn open_cloud_snapshot(path: &Path, password: Option<&str>, local: Option<&Session>) -> Result<Self> {
         let mut file = OpenOptions::new().read(true).write(true).open(path).map_err(|_| "storageError")?;
         let size = file.metadata().map_err(|_| "storageError")?.len();
         let snapshot_size = size.checked_sub(CLOUD_TRAILER).filter(|len| *len >= 512).ok_or("backupValidationFailed")?;
@@ -818,7 +834,18 @@ impl Vault {
         drop(file);
 
         let mut source = Self::readonly(path)?;
-        let (header, key) = source.master_key(password)?;
+        let (header, key) = if let Some(password) = password {
+            source.master_key(password)?
+        } else {
+            let header = source.header()?.ok_or("backupValidationFailed")?;
+            let local = local.filter(|session| session.vault_id == header.vault_id)
+                .ok_or("cloudBackupPasswordRequired")?;
+            let key = Zeroizing::new(*local.key);
+            if unseal(&key, &trailer[..72], CLOUD_AAD).is_err() {
+                return Err("cloudBackupPasswordRequired".into());
+            }
+            (header, key)
+        };
         let authenticated = unseal(&key, &trailer[..72], CLOUD_AAD).map_err(|_| "backupValidationFailed")?;
         if authenticated.as_slice() != digest {
             return Err("backupValidationFailed".into());
@@ -828,17 +855,48 @@ impl Vault {
         if integrity != "ok" {
             return Err("backupValidationFailed".into());
         }
-        let header: String = source.conn.query_row("SELECT header FROM meta WHERE id=1", [], |row| row.get(0)).map_err(db_error)?;
-        let mut entries = source.conn.prepare("SELECT id, sealed FROM entries").map_err(db_error)?;
-        let mut rows = entries.query([]).map_err(db_error)?;
+        Ok(source)
+    }
+    pub(crate) fn merge_cloud_snapshot(&mut self, path: &Path, password: Option<&str>) -> Result<usize> {
+        self.expire();
+        let session = self.session.as_ref().ok_or("locked")?;
+        let source = Self::open_cloud_snapshot(path, password, Some(session))?;
+        let mut fingerprints = BTreeSet::new();
+        let fingerprint = |entry: &Entry| -> Result<[u8; 32]> {
+            let mut value = entry.clone();
+            // Copies imported on older devices have new IDs and timestamps.
+            // Deduplicate their actual contents, including history and metadata.
+            value.id.clear();
+            value.created_at = 0;
+            value.updated_at = 0;
+            let bytes = Zeroizing::new(serde_json::to_vec(&value).map_err(|_| "cryptoError")?);
+            Ok(Sha256::digest(bytes.as_slice()).into())
+        };
+        for id in session.index.keys() {
+            fingerprints.insert(fingerprint(&self.read_entry(id)?)?);
+        }
+        let mut additions = Vec::new();
+        let mut ids: BTreeSet<String> = session.index.keys().cloned().collect();
+        for id in source.session.as_ref().ok_or("locked")?.index.keys() {
+            let mut entry = source.read_entry(id)?;
+            if !fingerprints.insert(fingerprint(&entry)?) { continue; }
+            // An edited record on another device must never replace local data.
+            while !ids.insert(entry.id.clone()) { entry.id = Uuid::new_v4().to_string(); }
+            additions.push(entry);
+        }
+        self.expire();
+        let session = self.session.as_mut().ok_or("locked")?;
         let tx = self.conn.transaction().map_err(db_error)?;
-        tx.execute("INSERT INTO meta(id, header) VALUES (1, ?1)", [header]).map_err(db_error)?;
-        while let Some(row) = rows.next().map_err(db_error)? {
-            tx.execute("INSERT INTO entries(id, sealed) VALUES (?1, ?2)", params![row.get::<_, String>(0).map_err(db_error)?, row.get::<_, Vec<u8>>(1).map_err(db_error)?]).map_err(db_error)?;
+        for entry in &additions {
+            let bytes = Zeroizing::new(serde_json::to_vec(entry).map_err(|_| "cryptoError")?);
+            let sealed = seal(&session.key, &bytes, entry_aad(&session.vault_id, &entry.id).as_bytes())?;
+            tx.execute("INSERT INTO entries(id,sealed) VALUES (?1,?2)", params![entry.id, sealed]).map_err(db_error)?;
         }
         tx.commit().map_err(db_error)?;
-        self.backups.dirty = true;
-        Ok(())
+        let count = additions.len();
+        for entry in &additions { session.index.insert(entry.id.clone(), Summary::from(entry)); }
+        self.backups.dirty |= count > 0;
+        Ok(count)
     }
     fn verified_backup(&self, path: &Path) -> Result<()> {
         if path == self.path || path.exists() {
@@ -1088,6 +1146,46 @@ mod tests {
         restored.unlock(master).unwrap();
         assert_eq!(restored.get(&saved.id).unwrap().password, saved.password);
         assert_eq!(restored.restore_cloud_snapshot(&snapshot, master).unwrap_err(), "vaultExists");
+    }
+    #[test]
+    fn cloud_merge_preserves_conflicts_deduplicates_and_keeps_the_local_key() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut source = Vault::open(temp.path().join("source.sqlite")).unwrap();
+        source.create("fictional source master password").unwrap();
+        let original = source.save(entry("Shared account")).unwrap();
+        let snapshot = temp.path().join("backup.pwcloud");
+        source.cloud_snapshot(&snapshot).unwrap();
+        let mut local = Vault::open(temp.path().join("local.sqlite")).unwrap();
+        let initial = temp.path().join("initial.pwcloud");
+        std::fs::copy(&snapshot, &initial).unwrap();
+        local.restore_cloud_snapshot(&initial, "fictional source master password").unwrap();
+        local.unlock("fictional source master password").unwrap();
+        local.change_password("fictional source master password", "fictional local master password").unwrap();
+        let mut conflicting = local.get(&original.id).unwrap();
+        conflicting.title = "Local version".into();
+        conflicting.password = "Local-only-password-456!".into();
+        local.save(conflicting).unwrap();
+
+        let attempt = temp.path().join("attempt.pwcloud");
+        std::fs::copy(&snapshot, &attempt).unwrap();
+        assert_eq!(local.merge_cloud_snapshot(&attempt, None).unwrap_err(), "cloudBackupPasswordRequired");
+        assert_eq!(local.list(query()).unwrap().total, 1);
+        std::fs::copy(&snapshot, &attempt).unwrap();
+        assert_eq!(local.merge_cloud_snapshot(&attempt, Some("incorrect password")).unwrap_err(), "invalidPassword");
+        assert_eq!(local.list(query()).unwrap().total, 1);
+        std::fs::copy(&snapshot, &attempt).unwrap();
+        assert_eq!(local.merge_cloud_snapshot(&attempt, Some("fictional source master password")).unwrap(), 1);
+        assert_eq!(local.get(&original.id).unwrap().password, "Local-only-password-456!");
+        let merged = local.list(query()).unwrap();
+        assert_eq!(merged.total, 2);
+        let imported = merged.items.iter().find(|item| item.title == "Shared account").unwrap();
+        assert_ne!(imported.id, original.id);
+        assert_eq!(local.get(&imported.id).unwrap().password, original.password);
+        std::fs::copy(&snapshot, &attempt).unwrap();
+        assert_eq!(local.merge_cloud_snapshot(&attempt, Some("fictional source master password")).unwrap(), 0);
+        local.lock();
+        local.unlock("fictional local master password").unwrap();
+        assert_eq!(local.list(query()).unwrap().total, 2);
     }
     #[test]
     fn favicons_are_bounded_local_pngs_and_survive_encrypted_backups() {

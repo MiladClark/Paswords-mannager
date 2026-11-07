@@ -45,6 +45,10 @@ pub(crate) fn purge_auxiliary(directory: &Path) -> Result<()> {
                 | "automatic-backups.json"
                 | "browser"
                 | "browsers.device"
+                // Retired builds stored a dedicated browser profile here.
+                // Remove it only when the user explicitly erases local data.
+                | "native-browser"
+                | "native-browser.json"
                 | "cloud-backup.device"
                 | "vault.device-pin"
         ) || [".backup-settings-", ".browser-", ".pin-"]

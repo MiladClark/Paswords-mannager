@@ -1,22 +1,11 @@
-:root {
-  --update-panel: #f8fafc;
-  --update-edge: #cbd5e1;
-  --update-text: #0f172a;
-  --update-muted: #475569;
-  --update-accent: #0e7490;
-  --update-ink: #fff;
-  --update-track: #dbe4ee;
-}
-:root[data-theme="dark"] {
-  --update-panel: #101a2e;
-  --update-edge: #1d2a44;
-  --update-text: #f8fafc;
-  --update-muted: #a4b3c7;
-  --update-accent: #22d3ee;
-  --update-ink: #0b1120;
-  --update-track: #1e293b;
-}
 .update-card, .update-pill {
+  --update-panel: var(--base);
+  --update-edge: var(--line);
+  --update-text: var(--text);
+  --update-muted: var(--muted);
+  --update-accent: var(--accent);
+  --update-ink: var(--accent-ink);
+  --update-track: var(--well);
   position: fixed;
   right: 16px;
   bottom: 16px;
@@ -24,11 +13,11 @@
   border: 1px solid var(--update-edge);
   background: var(--update-panel);
   color: var(--update-text);
-  box-shadow: 0 12px 28px rgb(0 0 0 / 30%);
+  box-shadow: 0 12px 28px var(--backdrop);
 }
 .update-card { width: min(340px, calc(100vw - 32px)); border-radius: 16px; }
 .update-pill { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 999px; font-size: 12px; font-weight: 600; }
-.update-pill:hover { border-color: var(--update-accent); }
+.update-pill:hover { background: var(--hover); }
 .update-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 14px 0 16px; }
 .update-head h2 { margin: 0; font-size: 14px; font-weight: 650; }
 .update-head h2 span { margin-inline-start: 6px; font-weight: 400; color: var(--update-muted); }
@@ -39,9 +28,10 @@
 .update-button, .update-icon { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border-radius: 8px; }
 .update-button { min-height: 32px; padding: 5px 10px; font-size: 12px; font-weight: 600; }
 .update-icon { flex: none; width: 32px; height: 32px; padding: 0; color: var(--update-muted); }
-.update-button:hover, .update-icon:hover { background: var(--update-track); }
+.update-button:hover:not(:disabled), .update-icon:hover:not(:disabled) { background: var(--hover); }
+.update-icon:hover:not(:disabled) { color: var(--update-text); }
 .update-primary { background: var(--update-accent); color: var(--update-ink); }
-.update-primary:hover { background: var(--update-accent); filter: brightness(1.08); }
+.update-primary:hover:not(:disabled) { background: var(--accent-hover); }
 .update-track { height: 8px; overflow: hidden; border-radius: 999px; background: var(--update-track); }
 .update-track span { display: block; height: 100%; border-radius: inherit; background: var(--update-accent); transition: width 150ms ease; }
 .update-track .update-indeterminate { animation: update-pulse 1.4s ease-in-out infinite; }

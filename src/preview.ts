@@ -15,6 +15,9 @@ let browserHandled = false;
 let browserSaveHandled = false;
 let automaticBackups = false;
 let skipDeleteConfirmation = false;
+let cloudInfo = { email: "", enabled: false, lastBackup: null as number | null, issue: null as string | null };
+let cloudSnapshot = { id: "9b5b1ed5-a171-4d90-b5ec-1608e3bd517b", createdAt: "2026-11-06T10:30:00Z", size: 16384 };
+let cloudEntries: Entry[] = [{ ...blankEntry(), id: "sample-cloud-login", title: "Home computer login", username: "alex@example.test", password: "Fictional-cloud-password-123!", url: "https://home.example.test", createdAt: 1793961000, updatedAt: 1793961000 }];
 function checkMaster(value: unknown) {
   if (cooldown > Date.now()) throw "authCooldown";
   if (value !== master) {
@@ -89,6 +92,15 @@ export async function request(
   await new Promise((r) => setTimeout(r, 35));
   if (command === "vault_status")
     return { exists, unlocked, idleSeconds: 300, legacyPinRetired: false };
+  if (command === "cloud_info") return { ...cloudInfo };
+  if (command === "cloud_connect") {
+    cloudInfo = { ...cloudInfo, email: "alex@example.test", issue: null };
+    return { ...cloudInfo };
+  }
+  if (command === "cloud_list") {
+    if (!cloudInfo.email) throw "cloudSignInRequired";
+    return [{ ...cloudSnapshot }];
+  }
   if (command === "prepare_browser_extension")
     return { directory: "", browserInstalled: true, preview: true };
   if (
@@ -194,9 +206,20 @@ export async function request(
     skipDeleteConfirmation = false;
     browserHandled = true;
     browserSaveHandled = true;
+    cloudInfo = { email: "", enabled: false, lastBackup: null, issue: null };
     return;
   }
   if (!unlocked) throw "locked";
+  if (command === "cloud_sync") {
+    if (!cloudInfo.email) throw "cloudSignInRequired";
+    if (args.id !== cloudSnapshot.id) throw "cloudChanged";
+    const additions = cloudEntries.filter((item) => !entries.some((local) => local.id === item.id));
+    entries.push(...structuredClone(additions));
+    cloudEntries = structuredClone(entries);
+    cloudInfo = { ...cloudInfo, lastBackup: Math.floor(Date.now() / 1000), issue: null };
+    cloudSnapshot = { ...cloudSnapshot, id: crypto.randomUUID(), createdAt: new Date().toISOString() };
+    return { imported: additions.length, info: { ...cloudInfo } };
+  }
   if (command === "automatic_backup_info")
     return { enabled: automaticBackups, lastCreated: 0, retained: 0 };
   if (command === "configure_automatic_backups") {

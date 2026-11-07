@@ -13,7 +13,7 @@ const permissions = JSON.parse(
     "utf8",
   ),
 ).permissions;
-async function boot(page: Page, unlocked: boolean, updateMode?: "installed" | "portable", backups?: "empty" | "saved") {
+async function boot(page: Page, unlocked: boolean, updateMode?: "installed" | "portable", backups?: "empty" | "saved", syncProbe = false) {
   // Native IPC is mocked before importing the real app. No database or OS window is opened.
   await page.route(/\/src\/main\.tsx(?:\?t=\d+)?$/, (route) =>
     route.fulfill({
@@ -27,6 +27,7 @@ async function boot(page: Page, unlocked: boolean, updateMode?: "installed" | "p
     globalThis.updateProbe=[];
     let finishTransfer;
     let transfers=0;
+    let syncAttempts=0;
     let vaultExists=${!backups};
     let vaultUnlocked=${unlocked};
     let cloud={email:'first@example.test',enabled:true,lastBackup:null,issue:null};
@@ -68,7 +69,20 @@ async function boot(page: Page, unlocked: boolean, updateMode?: "installed" | "p
       }
       if(command==='cloud_list') {
         if(!cloud.email) throw 'cloudSignInRequired';
-        return ${backups === "saved" ? "[{id:'test-backup',createdAt:'2026-01-01T00:00:00Z'}]" : "[]"};
+        return ${backups === "saved" || syncProbe ? "[{id:'test-backup',createdAt:'2026-01-01T00:00:00Z',size:36944}]" : "[]"};
+      }
+      if(command==='cloud_sync' && ${syncProbe}) {
+        globalThis.accountProbe.push(command);
+        if(++syncAttempts===1) throw 'cloudBackupPasswordRequired';
+        if(args.password!=='Fictional backup password') throw 'invalidPassword';
+        args.progress.onmessage('merging');
+        await new Promise(resolve=>setTimeout(resolve,250));
+        args.progress.onmessage('uploading');
+        await new Promise(resolve=>setTimeout(resolve,250));
+        if(syncAttempts===2) throw 'cloudTimeout';
+        args.progress.onmessage('finishing');
+        await new Promise(resolve=>setTimeout(resolve,1000));
+        return {imported:0,info:cloud};
       }
       if(command==='cloud_restore') {
         if(args.id!=='test-backup'||args.password!=='Fictional backup password') throw 'invalidPassword';
@@ -126,10 +140,59 @@ test("the updater can collapse, pause and resume, and protects an unsaved edit b
     .toEqual(["update_download", "update_download", "update_install"]);
 });
 
+for (const colorScheme of ["dark", "light"] as const) {
+  test(`updater uses the app theme colors: ${colorScheme}`, async ({ page }) => {
+    await page.emulateMedia({ colorScheme });
+    await boot(page, true, "installed");
+    const card = page.locator(".update-card");
+    await expect(card).toBeVisible();
+    const colors = await card.evaluate((element) => {
+      const style = getComputedStyle(element);
+      const resolve = (name: string) => {
+        const probe = document.createElement("span");
+        probe.style.color = `var(${name})`;
+        element.append(probe);
+        const color = getComputedStyle(probe).color;
+        probe.remove();
+        return color;
+      };
+      return { background: style.backgroundColor, text: style.color, border: style.borderTopColor, base: resolve("--base"), foreground: resolve("--text"), line: resolve("--line") };
+    });
+    expect(colors.background).toBe(colors.base);
+    expect(colors.text).toBe(colors.foreground);
+    expect(colors.border).toBe(colors.line);
+    expect((await new AxeBuilder({ page }).include(".update-card").withTags(["wcag2a", "wcag2aa"]).analyze()).violations).toEqual([]);
+    await page.screenshot({ path: `artifacts/updater-${colorScheme}.png` });
+  });
+}
+
 test("portable updates open the DevTune download page without installing", async ({ page }) => {
   await boot(page, true, "portable");
   await page.getByRole("button", { name: "Open downloads" }).click();
   await expect.poll(() => page.evaluate(() => (globalThis as ProbeWindow).updateProbe)).toEqual(["update_open_downloads"]);
+});
+
+test("cloud sync shows the current stage and recovers from a timeout without trapping the dialog", async ({ page }) => {
+  await boot(page, true, undefined, undefined, true);
+  await page.getByRole("button", { name: "Sync with DevTune", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Merge cloud backup?", exact: true });
+  const confirm = dialog.getByRole("button", { name: "Merge and sync", exact: true });
+  await confirm.click();
+  const password = dialog.getByLabel("Backup master password", { exact: true });
+  await expect(password).toBeVisible();
+  await expect(confirm).toBeDisabled();
+  await password.fill("Fictional backup password");
+  await confirm.click();
+  await expect(dialog.getByRole("status")).toContainText("Unlocking the backup and merging items");
+  await expect(dialog.getByRole("status")).toContainText("Uploading encrypted backup");
+  await expect(dialog.getByRole("alert")).toContainText("The cloud server took too long to respond");
+  await expect(dialog.getByRole("button", { name: "Cancel", exact: true })).toBeEnabled();
+  await expect(password).toHaveValue("");
+  await password.fill("Fictional backup password");
+  await confirm.click();
+  await expect(dialog.getByRole("status")).toContainText("Confirming that your backup was saved");
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole("status")).toContainText("Vault synced and backed up");
 });
 test("the empty vault fills the window at wide and narrow sizes", async ({ page }) => {
   await page.setViewportSize({ width: 1010, height: 770 });
@@ -151,9 +214,12 @@ test("sign out requires the master password before returning to setup", async ({
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   const settings = page.getByRole("main", { name: "Settings", exact: true });
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(settings.getByText("Connected as first@example.test")).toBeVisible();
+  await expect(settings.getByText("first@example.test", { exact: true })).toBeVisible();
   await settings.getByRole("button", { name: "Connect another account", exact: true }).click();
-  await expect(settings.getByText("Connected as second@example.test")).toBeVisible();
+  await expect(settings).toHaveCount(0);
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await expect(settings.getByText("second@example.test", { exact: true })).toBeVisible();
+  await settings.getByRole("button", { name: "Security", exact: true }).click();
   const signOut = settings.getByRole("button", { name: "Sign out", exact: true });
   await signOut.click();
   const dialog = page.getByRole("dialog");
@@ -217,23 +283,25 @@ test("a DevTune account without backups can create a vault with cloud backup ena
   expect(await page.evaluate(() => (globalThis as ProbeWindow).accountProbe)).toEqual(["cloud_connect", "create_vault", "cloud_enable"]);
 });
 
-test("sign out is at the bottom of settings and accessible in a narrow window", async ({ page }) => {
+test("settings sections and sign out are accessible in a narrow window", async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 540 });
   await boot(page, true);
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   const settings = page.getByRole("main", { name: "Settings", exact: true });
   await expect(settings.getByRole("button", { name: "Quit PassWards", exact: true })).toHaveCount(0);
+  await settings.getByRole("button", { name: "Security", exact: true }).click();
   const signOut = settings.getByRole("button", { name: "Sign out", exact: true });
-  await expect(signOut).not.toBeInViewport();
   await signOut.scrollIntoViewIfNeeded();
   await expect(signOut).toBeInViewport();
   await page.screenshot({ path: "artifacts/settings-signout-360.png" });
   expect(await settings.evaluate((el) => el.scrollWidth)).toBe(
     await settings.evaluate((el) => el.clientWidth),
   );
+  await settings.getByRole("button", { name: "App", exact: true }).click();
   const shortcuts = settings.getByText("Keyboard shortcuts", { exact: true });
   await shortcuts.scrollIntoViewIfNeeded();
   await expect(shortcuts).toBeInViewport();
+  await settings.getByRole("button", { name: "Security", exact: true }).click();
   await signOut.click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();

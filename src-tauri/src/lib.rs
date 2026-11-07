@@ -590,6 +590,7 @@ pub fn run() {
             cloud::reset_local,
             cloud::cloud_enable,
             cloud::cloud_backup_now,
+            cloud::cloud_sync,
             cloud::cloud_list,
             cloud::cloud_restore,
             updates::update_check,

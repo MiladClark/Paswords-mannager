@@ -3,7 +3,7 @@ use std::{
     io::{Read, Write},
     net::{TcpListener, TcpStream},
     path::PathBuf,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, OnceLock},
     thread,
     time::{Duration, Instant},
 };
@@ -32,6 +32,16 @@ const MAX_SIZE: u64 = 1024 * 1024 * 1024;
 const OCTETS: &str = "application/octet-stream";
 const INTERVAL: Duration = Duration::from_secs(5);
 const RETRY: Duration = Duration::from_secs(30);
+const API_TIMEOUT: Duration = Duration::from_secs(12);
+const TRANSFER_TIMEOUT: Duration = Duration::from_secs(25);
+const SYNC_TIMEOUT: Duration = Duration::from_secs(45);
+const DOWNLOAD_CACHE_TTL: Duration = Duration::from_secs(120);
+
+#[derive(Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum SyncStage { Downloading, Merging, Preparing, Checking, Uploading, Finishing }
+
+struct CachedDownload { id: Uuid, file: NamedTempFile, expires: Instant }
 
 #[derive(Clone, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -40,6 +50,8 @@ struct Config {
     email: String,
     enabled: bool,
     last_backup: Option<u64>,
+    #[serde(default)]
+    last_snapshot: Option<Uuid>,
 }
 
 #[derive(Serialize)]
@@ -76,6 +88,7 @@ struct Runtime {
     last_revision: Option<u64>,
     pending: Option<Pending>,
     next_try: Instant,
+    downloaded: Option<CachedDownload>,
 }
 
 impl Default for Runtime {
@@ -84,6 +97,7 @@ impl Default for Runtime {
             last_revision: None,
             pending: None,
             next_try: Instant::now(),
+            downloaded: None,
         }
     }
 }
@@ -181,6 +195,10 @@ impl Cloud {
             Err(_) if !manual => return Ok(()),
             Err(_) => return Err("cloudBusy".into()),
         };
+        self.backup_locked(vault, manual, self.config()?.last_snapshot, Instant::now() + SYNC_TIMEOUT, &|_| {})
+    }
+
+    fn backup_locked(&self, vault: &VaultState, manual: bool, mut expected: Option<Uuid>, deadline: Instant, progress: &dyn Fn(SyncStage)) -> Result<()> {
         let mut config = self.config()?;
         if !manual && !config.enabled {
             return Ok(());
@@ -201,6 +219,7 @@ impl Cloud {
         }
         loop {
             if runtime.pending.is_none() {
+                progress(SyncStage::Preparing);
                 let mut vault = vault.0.lock().map_err(|_| "storageError")?;
                 let revision = vault.cloud_revision();
                 if !manual && (revision.is_none() || revision == runtime.last_revision) {
@@ -224,13 +243,33 @@ impl Cloud {
                 });
             }
             let pending = runtime.pending.as_ref().ok_or("storageError")?;
-            let result = upload(&config.token, pending);
+            // A different device may have uploaded since our last backup. Do not
+            // bury its records under a one-way automatic backup before a merge.
+            progress(SyncStage::Checking);
+            let latest = match self.snapshots_until(deadline) {
+                Ok(snapshots) => snapshots.first().map(|snapshot| snapshot.id),
+                Err(cause) => {
+                    runtime.next_try = Instant::now() + RETRY;
+                    self.record_issue(Some(cause.clone()));
+                    return Err(cause);
+                }
+            };
+            if latest != expected && latest != Some(pending.id) {
+                runtime.next_try = Instant::now() + RETRY;
+                self.record_issue(Some("cloudChanged".into()));
+                return Err("cloudChanged".into());
+            }
+            let result = upload(&config.token, pending, deadline, progress);
+            let uploaded_revision = pending.revision;
+            let uploaded_id = pending.id;
             match result {
                 Ok(()) => {
-                    runtime.last_revision = Some(pending.revision);
+                    runtime.last_revision = Some(uploaded_revision);
+                    expected = Some(uploaded_id);
                     runtime.pending = None;
                     runtime.next_try = Instant::now() + INTERVAL;
                     config.last_backup = Some(now());
+                    config.last_snapshot = expected;
                     self.update(config)?;
                     self.record_issue(None);
                     if requested_revision
@@ -253,10 +292,90 @@ impl Cloud {
         }
     }
 
+    fn snapshots(&self) -> Result<Vec<Snapshot>> {
+        self.snapshots_until(Instant::now() + API_TIMEOUT)
+    }
+
+    fn snapshots_until(&self, deadline: Instant) -> Result<Vec<Snapshot>> {
+        #[derive(Deserialize)]
+        struct List { snapshots: Vec<Snapshot> }
+        let config = self.connected()?;
+        let mut list: List = api_until(&client()?, "/api/passwards/backup", &config.token, json!({ "action": "list" }), deadline)?;
+        list.snapshots.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        Ok(list.snapshots)
+    }
+
+    fn download(&self, id: Uuid) -> Result<NamedTempFile> {
+        self.download_until(id, Instant::now() + SYNC_TIMEOUT)
+    }
+
+    fn download_until(&self, id: Uuid, deadline: Instant) -> Result<NamedTempFile> {
+        #[derive(Deserialize)]
+        struct Download { url: String, size: u64 }
+        let config = self.connected()?;
+        let client = client()?;
+        let download: Download = api_until(&client, "/api/passwards/backup", &config.token,
+            json!({ "action": "download", "id": id }), deadline)?;
+        if !(512..=MAX_SIZE).contains(&download.size) { return Err("backupValidationFailed".into()); }
+        let response = client.get(signed_url(&download.url, false)?)
+            .timeout(remaining(deadline, TRANSFER_TIMEOUT)?).send().map_err(network_error)?;
+        if response.status().as_u16() == 404 { return Err("cloudMissing".into()); }
+        if !response.status().is_success() { return Err("cloudDownloadFailed".into()); }
+        let mut response = response.take(download.size + 1);
+        let mut file = NamedTempFile::new_in(self.directory()?).map_err(|_| "storageError")?;
+        let bytes = std::io::copy(&mut response, &mut file).map_err(read_network_error)?;
+        if bytes != download.size { return Err("backupValidationFailed".into()); }
+        Ok(file)
+    }
+
+    fn cached_snapshot(&self, id: Uuid, deadline: Instant) -> Result<NamedTempFile> {
+        {
+            let runtime = self.0.runtime.lock().map_err(|_| "storageError")?;
+            if let Some(cached) = runtime.downloaded.as_ref().filter(|cached| cached.id == id && cached.expires > Instant::now()) {
+                return copy_download(&cached.file);
+            }
+        }
+        let file = self.download_until(id, deadline)?;
+        let attempt = copy_download(&file)?;
+        self.0.runtime.lock().map_err(|_| "storageError")?.downloaded = Some(CachedDownload {
+            id, file, expires: Instant::now() + DOWNLOAD_CACHE_TTL,
+        });
+        Ok(attempt)
+    }
+
+    fn sync(&self, vault: &VaultState, id: Option<Uuid>, password: Option<&str>, progress: &dyn Fn(SyncStage)) -> Result<usize> {
+        let _operation = self.0.operation.try_lock().map_err(|_| "cloudBusy")?;
+        let deadline = Instant::now() + SYNC_TIMEOUT;
+        vault.0.lock().map_err(|_| "storageError")?.touch()?;
+        let imported = if let Some(id) = id {
+            progress(SyncStage::Downloading);
+            let file = self.cached_snapshot(id, deadline)?;
+            progress(SyncStage::Merging);
+            vault.0.lock().map_err(|_| "storageError")?.merge_cloud_snapshot(file.path(), password)?
+        } else { 0 };
+        // Keep the same upload ID after a failed transfer if its contents still
+        // match. Creating a fresh ID on every retry makes the server reject it
+        // as backup_pending until the previous reservation expires.
+        let revision = vault.0.lock().map_err(|_| "storageError")?.cloud_revision();
+        {
+            let mut runtime = self.0.runtime.lock().map_err(|_| "storageError")?;
+            if runtime.pending.as_ref().is_some_and(|pending| Some(pending.revision) != revision) { runtime.pending = None; }
+        }
+        // The selected backup is immutable and was explicitly confirmed in the
+        // UI. Check for a newer backup once, immediately before uploading, rather
+        // than making three identical list requests around the local merge.
+        self.backup_locked(vault, true, id, deadline, progress)?;
+        self.0.runtime.lock().map_err(|_| "storageError")?.downloaded = None;
+        Ok(imported)
+    }
+
     pub(crate) fn start_worker(self, vault: VaultState, app: AppHandle) {
         thread::spawn(move || {
             loop {
                 thread::sleep(Duration::from_secs(5));
+                if let Ok(mut runtime) = self.0.runtime.try_lock() {
+                    if runtime.downloaded.as_ref().is_some_and(|cached| cached.expires <= Instant::now()) { runtime.downloaded = None; }
+                }
                 let before = self.info().ok().map(|info| (info.last_backup, info.issue));
                 let _ = self.backup(&vault, false);
                 let after = self.info().ok().map(|info| (info.last_backup, info.issue));
@@ -285,13 +404,16 @@ fn base_url() -> Result<Url> {
 }
 
 fn client() -> Result<Client> {
-    client_with_timeout(Duration::from_secs(180))
+    // Clones share DNS/TLS connections and the HTTP pool across sync steps.
+    static CLIENT: OnceLock<Result<Client>> = OnceLock::new();
+    CLIENT.get_or_init(|| client_with_timeout(TRANSFER_TIMEOUT)).clone()
 }
 
 fn client_with_timeout(timeout: Duration) -> Result<Client> {
     Client::builder()
-        .connect_timeout(Duration::from_secs(12))
+        .connect_timeout(Duration::from_secs(5))
         .timeout(timeout)
+        .pool_idle_timeout(Duration::from_secs(90))
         .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|_| "cloudUnavailable".into())
@@ -301,11 +423,12 @@ fn revoke_session(token: &str) {
     if !token.is_empty()
         && let Ok(client) = client_with_timeout(Duration::from_secs(5))
     {
-        let _: Result<Value> = api(
+        let _: Result<Value> = api_until(
             &client,
             "/api/passwards/backup",
             token,
             json!({ "action": "disconnect" }),
+            Instant::now() + Duration::from_secs(5),
         );
     }
 }
@@ -316,12 +439,40 @@ fn api<T: DeserializeOwned>(
     token: &str,
     body: Value,
 ) -> Result<T> {
+    api_until(client, endpoint, token, body, Instant::now() + API_TIMEOUT)
+}
+
+fn remaining(deadline: Instant, limit: Duration) -> Result<Duration> {
+    deadline.checked_duration_since(Instant::now()).filter(|left| !left.is_zero())
+        .map(|left| left.min(limit)).ok_or_else(|| "cloudTimeout".into())
+}
+
+fn network_error(error: reqwest::Error) -> String {
+    if error.is_timeout() { "cloudTimeout" } else { "cloudNetwork" }.into()
+}
+
+fn read_network_error(error: std::io::Error) -> String {
+    if error.kind() == std::io::ErrorKind::TimedOut || error.get_ref().and_then(|source| source.downcast_ref::<reqwest::Error>()).is_some_and(reqwest::Error::is_timeout) {
+        "cloudTimeout"
+    } else { "cloudNetwork" }.into()
+}
+
+fn copy_download(file: &NamedTempFile) -> Result<NamedTempFile> {
+    // Validation strips the cloud trailer from its input. Keep the encrypted
+    // original intact so asking for its password never downloads it again.
+    let mut attempt = NamedTempFile::new_in(file.path().parent().ok_or("storageError")?).map_err(|_| "storageError")?;
+    let mut source = File::open(file.path()).map_err(|_| "storageError")?;
+    std::io::copy(&mut source, &mut attempt).map_err(|_| "storageError")?;
+    Ok(attempt)
+}
+
+fn api_until<T: DeserializeOwned>(client: &Client, endpoint: &str, token: &str, body: Value, deadline: Instant) -> Result<T> {
     let url = base_url()?.join(endpoint).map_err(|_| "cloudUnavailable")?;
-    let mut request = client.post(url).json(&body);
+    let mut request = client.post(url).json(&body).timeout(remaining(deadline, API_TIMEOUT)?);
     if !token.is_empty() {
         request = request.bearer_auth(token);
     }
-    decode(request.send().map_err(|_| "cloudNetwork")?)
+    decode(request.send().map_err(network_error)?)
 }
 
 fn decode<T: DeserializeOwned>(response: Response) -> Result<T> {
@@ -330,7 +481,7 @@ fn decode<T: DeserializeOwned>(response: Response) -> Result<T> {
     response
         .take(32_768)
         .read_to_end(&mut data)
-        .map_err(|_| "cloudNetwork")?;
+        .map_err(read_network_error)?;
     if status.is_success() {
         return serde_json::from_slice(&data).map_err(|_| "cloudUnavailable".into());
     }
@@ -369,39 +520,51 @@ fn signed_url(value: &str, upload: bool) -> Result<Url> {
     Ok(url)
 }
 
-fn upload(token: &str, pending: &Pending) -> Result<()> {
+fn upload(token: &str, pending: &Pending, deadline: Instant, progress: &dyn Fn(SyncStage)) -> Result<()> {
     #[derive(Deserialize)]
     struct Start {
         url: Option<String>,
         ready: Option<bool>,
     }
     let client = client()?;
-    let start: Start = api(
+    progress(SyncStage::Uploading);
+    let start: Start = api_until(
         &client,
         "/api/passwards/backup",
         token,
         json!({
             "action": "start", "id": pending.id, "size": pending.size,
         }),
+        deadline,
     )?;
     if start.ready == Some(true) {
         return Ok(());
     }
     let url = signed_url(&start.url.ok_or("cloudUnavailable")?, true)?;
-    let file = File::open(pending.path()).map_err(|_| "storageError")?;
-    let _sent = client
-        .put(url)
-        .header("content-type", OCTETS)
-        .header("x-content-type", OCTETS)
-        .body(Body::sized(file, pending.size))
-        .send();
+    put_snapshot(&client, url, pending, deadline)?;
+    progress(SyncStage::Finishing);
     // A retry may get an upload conflict after a successful earlier transfer.
-    let _: Value = api(
+    // Only the complete API can confirm that this particular snapshot exists.
+    let _: Value = api_until(
         &client,
         "/api/passwards/backup",
         token,
         json!({ "action": "complete", "id": pending.id }),
+        deadline,
     )?;
+    Ok(())
+}
+
+fn put_snapshot(client: &Client, url: Url, pending: &Pending, deadline: Instant) -> Result<()> {
+    let file = File::open(pending.path()).map_err(|_| "storageError")?;
+    let response = client
+        .put(url)
+        .timeout(remaining(deadline, TRANSFER_TIMEOUT)?)
+        .header("content-type", OCTETS)
+        .header("x-content-type", OCTETS)
+        .body(Body::sized(file, pending.size))
+        .send().map_err(network_error)?;
+    if !response.status().is_success() && response.status().as_u16() != 409 { return Err("cloudUploadFailed".into()); }
     Ok(())
 }
 
@@ -633,6 +796,7 @@ pub(crate) async fn cloud_connect(
         revoke_session(&previous.token);
         *cloud.0.runtime.lock().map_err(|_| "storageError")? = Runtime::default();
         cloud.record_issue(None);
+        let _ = app.emit("cloud-backup-changed", ());
         cloud.info()
     })
     .await
@@ -728,22 +892,29 @@ pub(crate) async fn cloud_backup_now(
 
 #[tauri::command]
 pub(crate) async fn cloud_list(cloud: State<'_, Cloud>) -> Result<Vec<Snapshot>> {
-    #[derive(Deserialize)]
-    struct List {
-        snapshots: Vec<Snapshot>,
-    }
     let cloud = cloud.inner().clone();
+    run(move || cloud.snapshots()).await
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SyncResult { imported: usize, info: Info }
+
+#[tauri::command]
+pub(crate) async fn cloud_sync(
+    cloud: State<'_, Cloud>, vault: State<'_, VaultState>, app: AppHandle,
+    id: Option<Uuid>, password: Option<String>,
+    progress: tauri::ipc::Channel<SyncStage>,
+) -> Result<SyncResult> {
+    let cloud = cloud.inner().clone();
+    let vault = vault.inner().clone();
+    let password = password.map(Zeroizing::new);
     run(move || {
-        let config = cloud.connected()?;
-        let list: List = api(
-            &client()?,
-            "/api/passwards/backup",
-            &config.token,
-            json!({ "action": "list" }),
-        )?;
-        Ok(list.snapshots)
-    })
-    .await
+        let result = cloud.sync(&vault, id, password.as_ref().map(|value| value.as_str()), &|stage| { let _ = progress.send(stage); });
+        if let Err(ref cause) = result { cloud.record_issue(Some(cause.clone())); }
+        let _ = app.emit("cloud-backup-changed", ());
+        Ok(SyncResult { imported: result?, info: cloud.info()? })
+    }).await
 }
 
 #[tauri::command]
@@ -753,11 +924,6 @@ pub(crate) async fn cloud_restore(
     id: Uuid,
     password: String,
 ) -> Result<()> {
-    #[derive(Deserialize)]
-    struct Download {
-        url: String,
-        size: u64,
-    }
     let cloud = cloud.inner().clone();
     let vault = vault.inner().clone();
     let password = Zeroizing::new(password);
@@ -766,30 +932,7 @@ pub(crate) async fn cloud_restore(
         if vault.0.lock().map_err(|_| "storageError")?.status()?.exists {
             return Err("vaultExists".into());
         }
-        let config = cloud.connected()?;
-        let client = client()?;
-        let download: Download = api(
-            &client,
-            "/api/passwards/backup",
-            &config.token,
-            json!({ "action": "download", "id": id }),
-        )?;
-        if !(512..=MAX_SIZE).contains(&download.size) {
-            return Err("backupValidationFailed".into());
-        }
-        let response = client
-            .get(signed_url(&download.url, false)?)
-            .send()
-            .map_err(|_| "cloudNetwork")?;
-        if !response.status().is_success() {
-            return Err("cloudMissing".into());
-        }
-        let mut response = response.take(download.size + 1);
-        let mut file = NamedTempFile::new_in(cloud.directory()?).map_err(|_| "storageError")?;
-        let bytes = std::io::copy(&mut response, &mut file).map_err(|_| "cloudNetwork")?;
-        if bytes != download.size {
-            return Err("backupValidationFailed".into());
-        }
+        let file = cloud.download(id)?;
         vault
             .0
             .lock()
@@ -797,4 +940,118 @@ pub(crate) async fn cloud_restore(
             .restore_cloud_snapshot(file.path(), &password)
     })
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pending() -> Pending {
+        let directory = tempfile::tempdir().unwrap();
+        fs::write(directory.path().join("snapshot"), [7; 64]).unwrap();
+        Pending { id: Uuid::new_v4(), directory, revision: 1, size: 64 }
+    }
+
+    fn upload_server(status: u16, delay: Duration) -> (Url, thread::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let url = Url::parse(&format!("http://{}/upload", listener.local_addr().unwrap())).unwrap();
+        let thread = thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(3);
+            let (mut stream, _) = loop {
+                match listener.accept() {
+                    Ok(connection) => break connection,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock && Instant::now() < deadline => thread::sleep(Duration::from_millis(10)),
+                    _ => return,
+                }
+            };
+            stream.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+            let mut request = Vec::new(); let mut buffer = [0; 4096];
+            loop {
+                let read = stream.read(&mut buffer).unwrap();
+                if read == 0 { break; }
+                request.extend_from_slice(&buffer[..read]);
+                if let Some(end) = request.windows(4).position(|part| part == b"\r\n\r\n") {
+                    if request.len() >= end + 4 + 64 { break; }
+                }
+            }
+            thread::sleep(delay);
+            let _ = write!(stream, "HTTP/1.1 {status} Test\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+        });
+        (url, thread)
+    }
+
+    #[test]
+    fn failed_uploads_are_reported_instead_of_ignored() {
+        let client = client().unwrap();
+        for (status, expected) in [(201, Ok(())), (403, Err("cloudUploadFailed".into())), (500, Err("cloudUploadFailed".into())), (409, Ok(()))] {
+            let (url, server) = upload_server(status, Duration::ZERO);
+            assert_eq!(put_snapshot(&client, url, &pending(), Instant::now() + Duration::from_secs(2)), expected);
+            server.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn an_unresponsive_upload_stops_at_the_request_deadline() {
+        let client = client().unwrap();
+        let (url, server) = upload_server(201, Duration::from_millis(500));
+        let started = Instant::now();
+        assert_eq!(put_snapshot(&client, url, &pending(), started + Duration::from_millis(150)).unwrap_err(), "cloudTimeout");
+        assert!(started.elapsed() < Duration::from_secs(2));
+        assert_eq!(remaining(Instant::now() - Duration::from_secs(1), API_TIMEOUT).unwrap_err(), "cloudTimeout");
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn password_retries_reuse_the_intact_encrypted_download() {
+        let directory = tempfile::tempdir().unwrap();
+        let cloud = Cloud::open(directory.path().join("cloud.device"));
+        let mut original = crate::vault::Vault::open(directory.path().join("original.db")).unwrap();
+        original.create("fictional original cloud password").unwrap();
+        let file = NamedTempFile::new_in(directory.path()).unwrap();
+        fs::remove_file(file.path()).unwrap();
+        original.cloud_snapshot(file.path()).unwrap();
+        let encrypted = fs::read(file.path()).unwrap();
+        let id = Uuid::new_v4();
+        cloud.0.runtime.lock().unwrap().downloaded = Some(CachedDownload { id, file, expires: Instant::now() + DOWNLOAD_CACHE_TTL });
+        let mut local = crate::vault::Vault::open(directory.path().join("local.db")).unwrap();
+        local.create("fictional local cloud password").unwrap();
+        for (password, expected) in [(None, Err("cloudBackupPasswordRequired".into())), (Some("wrong password"), Err("invalidPassword".into())), (Some("fictional original cloud password"), Ok(0))] {
+            // No account/token exists. A network request here would fail.
+            let attempt = cloud.cached_snapshot(id, Instant::now() + API_TIMEOUT).unwrap();
+            assert_eq!(local.merge_cloud_snapshot(attempt.path(), password), expected);
+            assert_eq!(fs::read(cloud.0.runtime.lock().unwrap().downloaded.as_ref().unwrap().file.path()).unwrap(), encrypted);
+        }
+    }
+
+    #[test]
+    fn sync_retries_keep_the_existing_upload_reservation() {
+        let directory = tempfile::tempdir().unwrap();
+        let cloud = Cloud::open(directory.path().join("cloud.device"));
+        let mut local = crate::vault::Vault::open(directory.path().join("local.db")).unwrap();
+        local.create("fictional local upload password").unwrap();
+        let mut upload = pending();
+        upload.revision = local.cloud_revision().unwrap();
+        let id = upload.id;
+        cloud.0.runtime.lock().unwrap().pending = Some(upload);
+        let vault = VaultState(Arc::new(Mutex::new(local)));
+        // A failed connection must leave the retry's ID and encrypted file intact.
+        assert_eq!(cloud.sync(&vault, None, None, &|_| {}).unwrap_err(), "cloudSignInRequired");
+        assert_eq!(cloud.0.runtime.lock().unwrap().pending.as_ref().unwrap().id, id);
+    }
+
+    #[test]
+    #[ignore = "Read-only diagnosis of the connected account; run explicitly"]
+    fn live_read_only_connection() {
+        let path = PathBuf::from(std::env::var_os("APPDATA").expect("Windows app data")).join("com.parag.nook").join("cloud-backup.device");
+        let cloud = Cloud::open(path);
+        let started = Instant::now();
+        let snapshots = cloud.snapshots().expect("List connected account backups");
+        println!("List: {:?}; backup count: {}", started.elapsed(), snapshots.len());
+        if let Some(snapshot) = snapshots.first() {
+            let started = Instant::now();
+            let file = cloud.download(snapshot.id).expect("Download latest encrypted backup");
+            println!("Encrypted download: {:?}; bytes: {}", started.elapsed(), file.as_file().metadata().unwrap().len());
+        }
+    }
 }

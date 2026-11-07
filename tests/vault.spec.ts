@@ -112,6 +112,7 @@ test("browser pairing code and desktop approval are accessible", async ({
     .click();
   await expect(dialog).toHaveCount(0);
   await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: "Browsers", exact: true }).click();
   await page.getByRole("button", { name: "Pair browser", exact: true }).click();
   await expect(page.getByText("482916", { exact: true })).toBeVisible();
   expect(
@@ -371,7 +372,7 @@ test("Persian stays disabled even with a saved preference, and no PIN UI remains
   await expect(
     page.getByRole("button", { name: "Set up PIN", exact: true }),
   ).toHaveCount(0);
-  const backup = page.getByRole("checkbox", {
+  const backup = page.getByRole("switch", {
     name: "Keep automatic encrypted backups on this device",
     exact: true,
   });
@@ -391,6 +392,7 @@ test("Persian stays disabled even with a saved preference, and no PIN UI remains
 test("signing out returns to setup and a newly created vault contains no old items", async ({ page }) => {
   await enter(page);
   await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: "Security", exact: true }).click();
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByLabel("Master password", { exact: true })).toBeFocused();
@@ -469,6 +471,7 @@ test("motion animates dialog exits without delaying a security lock", async ({
   await enter(page);
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   const changeMaster = page.getByRole("button", { name: "Change master password", exact: true });
+  await page.getByRole("button", { name: "Security", exact: true }).click();
   await changeMaster.click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
@@ -606,6 +609,63 @@ test("declining a browser save does not add an account", async ({ page }) => {
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.locator(".entry-row")).toHaveCount(3);
+});
+
+test("cloud connection returns to the vault; sync asks first and adds cloud items once", async ({ page }) => {
+  await enter(page);
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: "Connect", exact: true }).click();
+  await expect(page.getByRole("main", { name: "Settings", exact: true })).toHaveCount(0);
+  await expect(page.locator(".entry-row")).toHaveCount(3);
+  await expect(page.getByRole("button", { name: "Sync with DevTune", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: "Sync", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Merge cloud backup?", exact: true });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.getByRole("button", { name: "Back to vault", exact: true }).click();
+  await expect(page.locator(".entry-row")).toHaveCount(3);
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: "Sync", exact: true }).click();
+  await dialog.getByRole("button", { name: "Merge and sync", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole("main", { name: "Settings", exact: true })).toHaveCount(0);
+  await expect(page.locator(".entry-row")).toHaveCount(4);
+  await expect(page.locator(".entry-row").filter({ hasText: "Home computer login" })).toHaveCount(1);
+  await page.getByRole("button", { name: "Sync with DevTune", exact: true }).click();
+  await dialog.getByRole("button", { name: "Merge and sync", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator(".entry-row")).toHaveCount(4);
+});
+
+test("browser save arriving in settings opens the vault and selects the saved item", async ({ page }) => {
+  await enter(page);
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.evaluate(() => history.replaceState(null, "", "?preview=1&browser-save=new"));
+  const dialog = page.getByRole("dialog", { name: "Save a login from your browser?", exact: true });
+  await expect(dialog).toBeVisible();
+  await expect(page.getByRole("main", { name: "Settings", exact: true })).toHaveCount(0);
+  await dialog.getByLabel("Name", { exact: true }).fill("Login received in settings");
+  await dialog.getByRole("button", { name: "Save login", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Login received in settings", exact: true })).toBeVisible();
+});
+
+test("settings layout adapts and browsers only shows extension setup", async ({ page }) => {
+  await enter(page);
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  for (const width of [900, 680, 360]) {
+    await page.setViewportSize({ width, height: 740 });
+    const settings = page.getByRole("main", { name: "Settings", exact: true });
+    expect(await settings.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+    await page.screenshot({ path: `artifacts/settings-sync-${width}.png` });
+  }
+  await page.setViewportSize({ width: 900, height: 740 });
+  await page.getByRole("button", { name: "Browsers", exact: true }).click();
+  await expect(page.getByRole("switch")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Open connected browser", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Pair browser", exact: true })).toBeVisible();
+  expect((await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa"]).analyze()).violations).toEqual([]);
+  await page.screenshot({ path: "artifacts/settings-browsers-900.png" });
 });
 
 test("saved site icons render locally with fallbacks for missing or invalid images", async ({
