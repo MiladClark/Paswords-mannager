@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "PassWards",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Save, update and fill logins with your offline PassWards vault. Desktop approval required.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1gajBOt4edFo59R1KAVDhN4vqKWRFMt/96iOzBZd+GEB+eBnV2tbXX82/+DYzimaIrmbLBuaoXTjYeB6Sa/mPHsaCO6cfJ7094cHotm04T7PkOaq3J1rKvt6IVl05swvgP1NgirnFmbt+g65DJuPl+G3FzmQAlABp2vUz2xVYGKDG+yRUtNjFEPNMHBvdlIio0XWDGe7lBJnuE+5G66vru2EK3qGTwsSdE2+Jrqsj5gR1yWu+8+N2kl05CxC6t5ulFPnxcNb+LzF53VNWYUh1LNL1PfuaWxdRkzMPZZKNqyD++jwcTy16fkj466O8pM6uiZOB8gLE4Xf20CYSauvvwIDAQAB",
   "minimum_chrome_version": "120",
