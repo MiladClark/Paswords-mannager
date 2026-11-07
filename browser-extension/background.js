@@ -56,7 +56,7 @@ async function native(op, extra = {}) {
       const disconnected = () => {
         void chrome.runtime.lastError;
         clear();
-        reject(Error("browserOffline"));
+        reject(Error("browserUnavailable"));
       };
       const timer = setTimeout(() => {
         clear();

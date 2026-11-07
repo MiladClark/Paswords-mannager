@@ -27,7 +27,6 @@ const IDLE_SECONDS: u64 = 300;
 const CLOUD_AAD: &[u8] = b"passwards:cloud-snapshot:v1:sha256";
 const CLOUD_MAGIC: &[u8; 8] = b"PWCLD001";
 const CLOUD_TRAILER: u64 = 80;
-const RESET_CONFIRMATION: &str = "موافقم";
 
 fn snapshot_digest(file: &mut File) -> Result<[u8; 32]> {
     file.rewind().map_err(|_| "storageError")?;
@@ -165,6 +164,7 @@ pub struct Vault {
     legacy_pin_retired: bool,
     auth_failures: u8,
     auth_retry_at: Option<std::time::Instant>,
+    skip_delete_confirmation: bool,
     backups: crate::backups::Backups,
     writable: bool,
 }
@@ -291,6 +291,7 @@ impl Vault {
             legacy_pin_retired: false,
             auth_failures: 0,
             auth_retry_at: None,
+            skip_delete_confirmation: false,
         })
     }
     fn readonly(path: &Path) -> Result<Self> {
@@ -308,6 +309,7 @@ impl Vault {
             legacy_pin_retired: false,
             auth_failures: 0,
             auth_retry_at: None,
+            skip_delete_confirmation: false,
         })
     }
     fn header(&self) -> Result<Option<Header>> {
@@ -684,33 +686,37 @@ impl Vault {
         self.backups.dirty = true;
         Ok(entry)
     }
-    pub fn delete_forever(&mut self, id: &str, confirmation: &str, confirmation_repeat: &str, master: &str) -> Result<()> {
+    pub fn delete_forever(
+        &mut self,
+        id: &str,
+        master: Option<&str>,
+        skip_confirmation: bool,
+    ) -> Result<bool> {
         self.touch()?;
-        if confirmation != "I agree" || confirmation_repeat != "I agree" {
-            return Err("deleteConfirmationInvalid".into());
-        }
         if !self.session.as_ref().ok_or("locked")?.index.contains_key(id) {
             return Err("notFound".into());
         }
-        // Deletion always verifies the master password again.
-        self.master_key(master)?;
+        if let Some(master) = master {
+            self.master_key(master)?;
+        } else if !self.skip_delete_confirmation {
+            return Err("deletePasswordRequired".into());
+        }
         self.conn
             .execute("DELETE FROM entries WHERE id=?1", [id])
             .map_err(db_error)?;
         self.session.as_mut().ok_or("locked")?.index.remove(id);
         self.backups.dirty = true;
-        Ok(())
+        if master.is_some() {
+            self.skip_delete_confirmation = skip_confirmation;
+        }
+        Ok(self.skip_delete_confirmation)
     }
     pub(crate) fn reset_local(
         &mut self,
-        confirmation: &str,
         master: &str,
         cleanup: impl FnOnce(&Path) -> Result<()>,
     ) -> Result<()> {
         self.touch()?;
-        if confirmation.trim() != RESET_CONFIRMATION {
-            return Err("resetConfirmationInvalid".into());
-        }
         self.master_key(master)?;
         let directory = self.path.parent().ok_or("resetCleanupFailed")?;
         let cleanup_result = cleanup(directory);
@@ -721,6 +727,7 @@ impl Vault {
         let tx = self.conn.transaction().map_err(db_error)?;
         tx.execute_batch("DELETE FROM entries; DELETE FROM meta;").map_err(db_error)?;
         tx.commit().map_err(db_error)?;
+        self.skip_delete_confirmation = false;
         self.lock();
         self.legacy_pin_retired = false;
         Ok(())
@@ -1156,31 +1163,36 @@ mod tests {
         assert!(serialized.get("deleted").is_none());
     }
     #[test]
-    fn master_only_delete_always_reauthenticates_and_preserves_backups() {
-        let tmp=tempfile::tempdir().unwrap();
-        let path=tmp.path().join("vault.db");
-        let master="a long deletion test passphrase";
-        let mut v=Vault::open(path.clone()).unwrap();
+    fn deletion_grant_requires_master_and_only_lasts_for_this_vault_instance() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("vault.db");
+        let master = "a long deletion test passphrase";
+        let mut v = Vault::open(path.clone()).unwrap();
         v.create(master).unwrap();
-        let a=v.save(entry("Delete A")).unwrap();
-        let b=v.save(entry("Keep B")).unwrap();
-        let backup=tmp.path().join("backup.passward");
+        let first = v.save(entry("Delete A")).unwrap();
+        let second = v.save(entry("Delete B")).unwrap();
+        let keep = v.save(entry("Keep C")).unwrap();
+        let backup = tmp.path().join("backup.passward");
         v.backup(&backup).unwrap();
-        assert_eq!(v.view_entry(&a.id).unwrap().entry.password,"VerySecret123!");
-        assert!(v.delete_forever(&a.id,"I agree","wrong",master).is_err());
-        assert!(v.delete_forever(&a.id,"I agree","I agree","7294").is_err());
-        assert!(v.delete_forever(&a.id,"I agree","I agree","incorrect master").is_err());
-        assert!(v.get(&a.id).is_ok());
+
+        assert_eq!(v.delete_forever(&first.id, None, true).unwrap_err(), "deletePasswordRequired");
+        assert!(v.delete_forever(&first.id, Some("incorrect master"), true).is_err());
+        assert!(v.get(&first.id).is_ok());
+        assert!(v.delete_forever(&first.id, Some(master), true).unwrap());
+        assert!(v.get(&first.id).is_err());
         v.lock();
-        assert!(v.delete_forever(&a.id,"I agree","I agree",master).is_err());
+        assert_eq!(v.delete_forever(&second.id, None, false).unwrap_err(), "locked");
         v.unlock(master).unwrap();
-        v.delete_forever(&a.id,"I agree","I agree",master).unwrap();
-        assert!(v.get(&a.id).is_err()); assert!(v.get(&b.id).is_ok());
+        assert!(v.delete_forever(&second.id, None, false).unwrap());
         drop(v);
-        let mut reopened=Vault::open(path).unwrap(); reopened.unlock(master).unwrap();
-        assert_eq!(reopened.list(query()).unwrap().total,1);
-        let mut snapshot=Vault::readonly(&backup).unwrap(); snapshot.unlock(master).unwrap();
-        assert_eq!(snapshot.list(query()).unwrap().total,2);
+
+        let mut reopened = Vault::open(path).unwrap();
+        reopened.unlock(master).unwrap();
+        assert_eq!(reopened.delete_forever(&keep.id, None, false).unwrap_err(), "deletePasswordRequired");
+        assert_eq!(reopened.list(query()).unwrap().total, 1);
+        let mut snapshot = Vault::readonly(&backup).unwrap();
+        snapshot.unlock(master).unwrap();
+        assert_eq!(snapshot.list(query()).unwrap().total, 3);
     }
     #[test]
     fn master_attempts_are_throttled_and_common_new_passwords_are_rejected() {

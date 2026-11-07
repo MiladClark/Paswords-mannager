@@ -121,7 +121,7 @@ test("browser pairing code and desktop approval are accessible", async ({
   await page.screenshot({ path: "artifacts/desktop-browser-pairing.png" });
 });
 
-test("add, edit, search, favorite and permanently delete with two confirmations and master password", async ({
+test("add, edit, search, favorite and permanently delete with a master password and a temporary skip option", async ({
   page,
 }) => {
   await enter(page);
@@ -180,50 +180,29 @@ test("add, edit, search, favorite and permanently delete with two confirmations 
   await expect(page.getByRole("button", { name: /^Trash/ })).toHaveCount(0);
   await page.getByRole("button", { name: "Delete item", exact: true }).click();
   const deletion = page.getByRole("dialog");
-  await expect(
-    deletion.getByRole("button", { name: "Continue", exact: true }),
-  ).toBeDisabled();
-  await deletion
-    .getByLabel("Agreement phrase", { exact: true })
-    .fill("I agree");
-  await deletion
-    .getByLabel("Repeat agreement phrase", { exact: true })
-    .fill("wrong");
-  await expect(
-    deletion.getByRole("button", { name: "Continue", exact: true }),
-  ).toBeDisabled();
-  await deletion
-    .getByLabel("Repeat agreement phrase", { exact: true })
-    .fill("I agree");
-  await deletion.getByRole("button", { name: "Continue", exact: true }).click();
-  await expect(
-    deletion.getByLabel("Master password", { exact: true }),
-  ).toBeVisible();
-  await expect(deletion.getByLabel("PIN", { exact: true })).toHaveCount(0);
-  await deletion
-    .getByLabel("Master password", { exact: true })
-    .fill("incorrect master");
-  await deletion.getByRole("button", { name: "Delete", exact: true }).click();
+  const remove = deletion.getByRole("button", { name: "Delete item", exact: true });
+  const master = deletion.getByLabel("Master password", { exact: true });
+  await expect(master).toBeFocused();
+  await expect(remove).toBeDisabled();
+  await deletion.getByRole("switch", { name: "Don’t ask again" }).check();
+  await master.fill("incorrect master");
+  await remove.click();
   await expect(deletion.getByRole("alert")).toBeVisible();
   await expect(page.locator(".entry-row")).toHaveCount(4);
   await deletion.getByRole("button", { name: "Cancel", exact: true }).click();
-  await expect(page.locator(".entry-row")).toHaveCount(4);
   await page.getByRole("button", { name: "Delete item", exact: true }).click();
-  await expect(
-    deletion.getByLabel("Agreement phrase", { exact: true }),
-  ).toHaveValue("");
-  for (const name of ["Agreement phrase", "Repeat agreement phrase"])
-    await deletion.getByLabel(name, { exact: true }).fill("I agree");
-  await deletion.getByRole("button", { name: "Continue", exact: true }).click();
-  await deletion
-    .getByLabel("Master password", { exact: true })
-    .fill("A fictional test passphrase");
-  await deletion.getByRole("button", { name: "Delete", exact: true }).click();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(deletion.getByRole("switch", { name: "Don’t ask again" })).not.toBeChecked();
+  await deletion.getByRole("switch", { name: "Don’t ask again" }).check();
+  await master.fill("A fictional test passphrase");
+  await remove.click();
+  await expect(deletion).toHaveCount(0);
   await expect(page.locator(".entry-row")).toHaveCount(3);
-  await expect(page.getByRole("status")).toContainText(
-    "Item permanently deleted",
-  );
+  await expect(page.getByRole("status")).toContainText("Item permanently deleted");
+
+  await page.locator(".entry-row").first().click();
+  await page.getByRole("button", { name: "Delete item", exact: true }).click();
+  await expect(page.locator(".entry-row")).toHaveCount(2);
+  await expect(deletion).toHaveCount(0);
 });
 
 test("unsaved edits need an explicit discard; keyboard save works", async ({
@@ -414,8 +393,6 @@ test("signing out returns to setup and a newly created vault contains no old ite
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
   const dialog = page.getByRole("dialog");
-  await dialog.getByLabel("Type «موافقم» to continue").fill("موافقم");
-  await dialog.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(dialog.getByLabel("Master password", { exact: true })).toBeFocused();
   await dialog.getByLabel("Master password", { exact: true }).fill("A fictional test passphrase");
   await dialog.getByRole("button", { name: "Erase data and sign out" }).click();

@@ -6,6 +6,7 @@ const words = {
     connected: "Connected",
     locked: "Locked",
     offline: "Closed",
+    disconnected: "Disconnected",
     checking: "Checking…",
     vaultLocked: "PassWards is locked",
     vaultLockedDesc:
@@ -32,7 +33,8 @@ const words = {
     unchanged: "This login is already saved.",
     waiting: "Approve this request in PassWards.",
     browserUnavailable:
-      "Connection unavailable. Make sure PassWards is installed.",
+      "Open PassWards, select Settings → Browsers → Repair connection, then refresh.",
+    connectionUnavailable: "Desktop connection unavailable",
     browserOrigin: "This account does not match the active site.",
     pageChanged: "The page changed. Please refresh and try again.",
     browserBusy: "Finish the pending request in PassWards first.",
@@ -52,6 +54,7 @@ const words = {
     connected: "متصل",
     locked: "قفل",
     offline: "بسته",
+    disconnected: "قطع",
     checking: "بررسی…",
     vaultLocked: "خزانه قفل است",
     vaultLockedDesc:
@@ -77,7 +80,8 @@ const words = {
     updated: "رمز عبور در خزانه به‌روز شد.",
     unchanged: "این ورود قبلاً ذخیره شده است.",
     waiting: "درخواست را در اپ تأیید کنید.",
-    browserUnavailable: "ارتباط با اپ برقرار نشد.",
+    browserUnavailable: "PassWards را باز کنید، در تنظیمات مرورگرها اتصال را تعمیر کنید و تازه‌سازی را بزنید.",
+    connectionUnavailable: "اتصال به برنامه برقرار نیست",
     browserOrigin: "این حساب با سایت فعلی تطابق ندارد.",
     pageChanged: "صفحه تغییر کرد. لطفاً تازه‌سازی کنید.",
     browserBusy: "درخواست قبلی را در اپ نهایی کنید.",
@@ -139,6 +143,35 @@ function showError(msg) {
 function clearError() {
   errorBanner.hidden = true;
   errorBanner.textContent = "";
+}
+
+function showConnectionFailure(code) {
+  const closed = code === "browserOffline";
+  clearError();
+  statusEl.textContent = "";
+  siteBar.hidden = true;
+  openBtn.closest("footer").hidden = true;
+  updateConnectionPill("offline", t(closed ? "offline" : "disconnected"));
+  const card = element("div", null, "state-card");
+  card.append(
+    element("h2", t(closed ? "appClosed" : "connectionUnavailable")),
+    element("p", t(closed ? "appClosedDesc" : "browserUnavailable")),
+  );
+  const button = element("button", t(closed ? "launchAction" : "refresh"), "btn-primary");
+  button.type = "button";
+  button.addEventListener("click", async () => {
+    button.disabled = true;
+    try {
+      if (closed) await send({ type: "focus" });
+      await load();
+    } catch (error) {
+      showConnectionFailure(error.message);
+    } finally {
+      button.disabled = false;
+    }
+  });
+  card.append(button);
+  content.replaceChildren(card);
 }
 
 async function send(message) {
@@ -210,6 +243,7 @@ function renderOfferCard(capture) {
 async function load() {
   applyThemeAndLang();
   clearError();
+  openBtn.closest("footer").hidden = false;
   content.replaceChildren();
   siteBar.hidden = true;
   statusEl.textContent = t("checking");
@@ -220,9 +254,7 @@ async function load() {
   try {
     state = await send({ type: "state" });
   } catch (err) {
-    statusEl.textContent = "";
-    updateConnectionPill("offline", t("offline"));
-    showError(err.message);
+    showConnectionFailure(err.message);
     return;
   }
 
@@ -250,30 +282,8 @@ async function load() {
       if (connectResult?.paired) {
         state = await send({ type: "state" });
       }
-    } catch {
-      statusEl.textContent = "";
-      updateConnectionPill("offline", t("offline"));
-      const card = element("div", null, "state-card");
-      const icon = element("div", null, "state-icon");
-      icon.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>`;
-      card.append(
-        icon,
-        element("h2", t("appClosed")),
-        element("p", t("appClosedDesc")),
-      );
-      const launchBtn = element("button", t("launchAction"), "btn-primary");
-      launchBtn.addEventListener("click", async () => {
-        launchBtn.disabled = true;
-        try {
-          await send({ type: "focus" });
-        } catch (e) {
-          showError(e.message);
-        } finally {
-          launchBtn.disabled = false;
-        }
-      });
-      card.append(launchBtn);
-      content.append(card);
+    } catch (error) {
+      showConnectionFailure(error.message);
       return;
     }
   }
@@ -398,6 +408,10 @@ async function load() {
       content.append(card);
     }
   } catch (err) {
+    if (err.message === "browserOffline" || err.message === "browserUnavailable") {
+      showConnectionFailure(err.message);
+      return;
+    }
     if (err.message === "locked") {
       statusEl.textContent = "";
       updateConnectionPill("locked", t("locked"));
@@ -501,8 +515,9 @@ async function load() {
 openBtn.addEventListener("click", async () => {
   try {
     await send({ type: "focus" });
+    await load();
   } catch (e) {
-    showError(e.message);
+    showConnectionFailure(e.message);
   }
 });
 

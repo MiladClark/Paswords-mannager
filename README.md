@@ -24,13 +24,13 @@ For maintainers: before cutting the first release with an installer, generate a 
 4. Use Settings to save an encrypted `.passward` backup, import a `.passward` or legacy `.nook` backup, or change the master password. Import adds separate copies; it never overwrites existing items. Use a new filename when exporting.
 5. Keep an encrypted backup off the device. On a new device, create a vault, then import the backup using the master password that applied when that backup was made. Older backups keep their original passwords and contents, including deleted items.
 
-Items can be starred, searched, sorted and grouped by folder. Deletion is permanent, with no trash: enter the exact phrase `I agree` in both confirmation boxes, then enter the master password again. The action is presented as a trash-can icon; it permanently deletes the record and its history. Canceling either stage leaves the item intact. Legacy trash markers are ignored so existing records remain accessible in the ordinary list. Up to five previous passwords are retained per item. Those versions are encrypted too.
+Items can be starred, searched, sorted and grouped by folder. The trash icon deletes the item and its password history permanently. Confirm with your master password. You can choose **Don’t ask again** to skip the dialog for further item deletions until you close PassWards. Legacy trash markers are ignored so existing records remain accessible in the ordinary list. Up to five previous passwords are retained per item. Those versions are encrypted too.
 
 The app locks on minimization, Windows session lock/disconnect/user changes, suspend/resume, and after five minutes of inactivity. Returning to Windows never automatically unlocks the vault. Locking discards unsaved edits. Closing with unsaved edits asks before discarding. Copied fields are cleared after about 30 seconds if the clipboard still contains that value; PassWards never clears an unrelated replacement. Windows clipboard exclusion hints are used to keep copies out of system history/cloud processing. Third-party clipboard managers may not honor these hints.
 
 ## Master password only
 
-PIN setup, storage, unlock and item prompts are removed. Unlocking the app uses only the master password; reading and editing inside an unlocked vault do not ask for another credential. Permanent deletion, browser fill approval, backup import and master-password change require the appropriate master password.
+PIN setup, storage, unlock and item prompts are removed. Unlocking the app uses only the master password; reading and editing inside an unlocked vault do not ask for another credential. Sign out, browser fill approval, backup import and master-password change require the appropriate master password.
 
 Five consecutive incorrect master-password checks start a progressive 1–30 second cooldown across verification actions in the running process. Restarting the app or attacking a stolen file offline bypasses this software limiter. New master passphrases must have at least 12 characters; a small local check rejects obvious common/repeated passwords. No password is sent to a breach-check service.
 
@@ -59,7 +59,7 @@ The live database is in the per-user Tauri application-data directory, normally 
 
 ## Chrome, Edge and Brave
 
-Version 0.3 includes the Manifest V3 extension in `browser-extension/`. In a build with the Edge Add-ons listing configured, choose **Settings → Browsers → Edge** to open the store and install it. To test the bundled development extension, use Developer mode → Load unpacked in `chrome://extensions`, `edge://extensions` or `brave://extensions`.
+Download the extension ZIP from [GitHub Releases](https://github.com/MiladClark/Paswords-mannager/releases/latest) and extract it. Open `chrome://extensions`, `edge://extensions` or `brave://extensions`, enable **Developer mode**, then choose **Load unpacked** and select the extracted folder containing `manifest.json`. The extension source is in `browser-extension/`.
 
 Open PassWards, then Settings → Browsers to prepare the extension. Opening the extension popup automatically connects that browser profile without a manual code. Filling and saving still require desktop approval. If you move the executable, use Repair connection in that copy of the app.
 
@@ -94,7 +94,7 @@ pnpm test:extension
 pnpm tauri build --no-bundle
 ```
 
-UI tests launch an isolated headless Microsoft Edge context with fictional data. They exercise CRUD, two-stage permanent deletion, keyboard actions, unsaved changes, lock-state cleanup, English-only behavior with preserved Persian source, light/dark accessibility, narrow layouts and master-password reauthentication. Core tests cover authenticated encryption, wrong passwords, tampering, persistence, key rotation, rollback, backups, history, pagination, 10,000 records, locked key memory, Windows lock-event handling, legacy PIN retirement, master-password cooldowns and fresh-master deletion. Browser-pairing DPAPI tests must run under a normal Windows user profile.
+UI tests launch an isolated headless Microsoft Edge context with fictional data. They exercise CRUD, permanent deletion with a temporary skip option, keyboard actions, unsaved changes, lock-state cleanup, English-only behavior with preserved Persian source, light/dark accessibility, narrow layouts and master-password reauthentication. Core tests cover authenticated encryption, wrong passwords, tampering, persistence, key rotation, rollback, backups, history, pagination, 10,000 records, locked key memory, Windows lock-event handling, legacy PIN retirement, master-password cooldowns and fresh-master deletion. Browser-pairing DPAPI tests must run under a normal Windows user profile.
 
 Extension integration tests launch a fresh Edge or Chrome profile and register a separate temporary `com.passward.fixture` native host. The test-only Rust example uses a temporary fictional vault and a private test pipe; no real vault is opened. The same suite can exercise the release binary's real native-host path by setting `PASSWARD_NATIVE_EXE` to its absolute path. It acquires exclusive ownership of the standard pipe first and fails if a running PassWards 0.3 instance already owns it. Test host registry entries and the isolated profile are removed afterward.
 

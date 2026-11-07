@@ -15,7 +15,7 @@ This is an early implementation, not an independently audited password manager. 
 
 ## Master-only authentication and legacy migration
 
-The PIN feature and its native commands are removed. A locked vault opens only with the master password. Deletion and browser-fill approval verify that master again. Reading/editing inside an already unlocked vault needs no extra credential. Confirmation phrases prevent accidental deletion; they are not an independent authentication factor.
+The PIN feature and its native commands are removed. A locked vault opens only with the master password. Sign out and browser-fill approval verify that master again. Reading and editing inside an already unlocked vault needs no extra credential.
 
 No PIN-wrapped vault key is written. After a verified master unlock, recognized legacy device-PIN files and interrupted PIN writes trigger full data-key rotation in the existing transaction-based rotation path. The old files are removed only after the new ciphertext/header commit. If cleanup fails, the current session is locked and the error is surfaced. Read-only backup imports do not perform device-file cleanup. Old snapshots necessarily retain their historical keys and credentials.
 
@@ -25,7 +25,7 @@ The live data key is held in an owned page-aligned allocation. On Windows, Virtu
 
 ## Application boundaries
 
-There is no trash command or soft-delete state. Permanent deletion checks an active master-password session, two exact copies of `I agree`, and a fresh master-password check in the same backend operation. Removing a record deletes its encrypted row and current-session metadata; it does not modify old backups or promise physical erasure. Legacy `deleted` fields are ignored during deserialization, keeping old records accessible without silently deleting them.
+There is no trash command or soft-delete state. Permanent deletion requires an unlocked vault and a fresh master-password check by default. Choosing **Don’t ask again** on a successful deletion authorizes further deletions in memory until the app closes. Signing out also clears this authorization and always verifies the master password. Removing a record deletes its encrypted row and current-session metadata; it does not modify old backups or promise physical erasure. Legacy `deleted` fields are ignored during deserialization, keeping old records accessible without silently deleting them.
 
 The bundled webview has no generic filesystem, clipboard or opener plugin permissions. Narrow Rust commands validate records, website schemes, sizes and session state. Only `http` and `https` websites can be opened; embedded URL credentials are rejected. File pickers run in Rust, so frontend callers cannot provide arbitrary backup paths. A backup export refuses to overwrite an existing file.
 

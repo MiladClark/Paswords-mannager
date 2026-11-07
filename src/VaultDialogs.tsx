@@ -1,28 +1,20 @@
 import { useState, type FormEvent } from "react";
 import { CircleNotch } from "@phosphor-icons/react";
-import type { Entry } from "./api";
 import type { Key as TextKey, Language } from "./i18n";
 import { Dialog, SecretInput, type Translate } from "./ui";
-import DeleteDialog from "./DeleteDialog";
-export type Modal = "master" | "import" | "delete" | "discard";
+export type Modal = "master" | "import" | "discard";
 interface Props {
   modal: Modal;
   t: Translate;
   language: Language;
   busy: boolean;
   error: string;
-  entry: Entry | null;
   run: <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
   onBusy: (value: boolean) => void;
   onError: (cause: unknown) => void;
   onClose: () => void;
   onMessage: (key: TextKey, suffix?: string) => void;
   onImported: () => void;
-  onDelete: (
-    confirmation: string,
-    confirmationRepeat: string,
-    master: string,
-  ) => Promise<void>;
   onDiscard: () => void;
 }
 export default function VaultDialogs({
@@ -31,14 +23,12 @@ export default function VaultDialogs({
   language,
   busy,
   error,
-  entry,
   run,
   onBusy,
   onError,
   onClose,
   onMessage,
   onImported,
-  onDelete,
   onDiscard,
 }: Props) {
   const [current, setCurrent] = useState("");
@@ -77,27 +67,12 @@ export default function VaultDialogs({
     onBusy(false);
     onClose();
   }
-  if (modal === "delete" && entry)
-    return (
-      <DeleteDialog
-        entry={entry}
-        t={t}
-        busy={busy}
-        error={error}
-        onBusy={onBusy}
-        onError={onError}
-        onClose={onClose}
-        onDelete={onDelete}
-      />
-    );
   const title: TextKey =
     modal === "master"
       ? "changeMaster"
       : modal === "import"
         ? "importTitle"
-        : modal === "delete"
-          ? "deleteTitle"
-          : "unsavedTitle";
+        : "unsavedTitle";
   const errorContent = error && (
     <p className="form-error" role="alert">
       {error}

@@ -1,6 +1,4 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
-export const DELETE_CONFIRMATION = "I agree";
-export const RESET_CONFIRMATION = "موافقم";
 
 export interface ExtraField {
   label: string;

@@ -56,6 +56,7 @@ export function Dialog({
   useLayoutEffect(() => {
     const el = ref.current!;
     el.showModal();
+    el.querySelector<HTMLElement>("[data-dialog-autofocus]")?.focus();
     return () => el.close();
   }, []);
   return (
@@ -119,6 +120,7 @@ export function SecretInput({
           spellCheck={false}
           dir="ltr"
           autoFocus={autoFocus}
+          data-dialog-autofocus={autoFocus || undefined}
           disabled={disabled}
           aria-describedby={hint ? `${id}-hint` : undefined}
         />

@@ -1,8 +1,6 @@
 // Development-only, in-memory UI fixture. Not imported into production builds.
 import {
   blankEntry,
-  DELETE_CONFIRMATION,
-  RESET_CONFIRMATION,
   type Entry,
   type EntryView,
   type Page,
@@ -16,6 +14,7 @@ let cooldown = 0;
 let browserHandled = false;
 let browserSaveHandled = false;
 let automaticBackups = false;
+let skipDeleteConfirmation = false;
 function checkMaster(value: unknown) {
   if (cooldown > Date.now()) throw "authCooldown";
   if (value !== master) {
@@ -186,14 +185,13 @@ export async function request(
   }
   if (command === "reset_local") {
     if (!unlocked) throw "locked";
-    if (String(args.confirmation).trim() !== RESET_CONFIRMATION)
-      throw "resetConfirmationInvalid";
     checkMaster(args.master);
     entries = [];
     master = "";
     exists = false;
     unlocked = false;
     automaticBackups = false;
+    skipDeleteConfirmation = false;
     browserHandled = true;
     browserSaveHandled = true;
     return;
@@ -282,15 +280,12 @@ export async function request(
     return view(entry);
   }
   if (command === "delete_entry") {
-    if (
-      args.confirmation !== DELETE_CONFIRMATION ||
-      args.confirmationRepeat !== DELETE_CONFIRMATION
-    )
-      throw "deleteConfirmationInvalid";
     if (!entries.some((e) => e.id === args.id)) throw "notFound";
-    checkMaster(args.master);
+    if (args.master !== null) checkMaster(args.master);
+    else if (!skipDeleteConfirmation) throw "deletePasswordRequired";
     entries = entries.filter((e) => e.id !== args.id);
-    return;
+    if (args.master !== null) skipDeleteConfirmation = args.skipConfirmation === true;
+    return skipDeleteConfirmation;
   }
   if (command === "generate_password") {
     const alphabet =

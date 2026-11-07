@@ -44,7 +44,7 @@ import EntryForm from "./EntryForm";
 import EntryDetail from "./EntryDetail";
 import VaultDialogs, { type Modal } from "./VaultDialogs";
 import SettingsPage from "./SettingsPage";
-import ResetDialog from "./ResetDialog";
+import DestructiveDialog from "./DestructiveDialog";
 import WindowControls from "./WindowControls";
 import BrowserFillDialog, { type BrowserFill } from "./BrowserFillDialog";
 import ExtensionInstall from "./ExtensionInstall";
@@ -122,7 +122,8 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const settingsButton = useRef<HTMLButtonElement>(null);
   const restoreSettingsFocus = useRef(false);
-  const [modal, setModal] = useState<Modal | "reset" | null>(null);
+  const [modal, setModal] = useState<Modal | "reset" | "delete" | null>(null);
+  const skipDeleteConfirmation = useRef(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const editorForm = useRef<HTMLFormElement>(null);
   const epoch = useRef(0);
@@ -538,7 +539,7 @@ export default function App() {
       setError(tRef.current("genericError"));
     }
   }
-  async function resetLocal(confirmation: string, master: string) {
+  async function resetLocal(master: string) {
     if (busy || resetting) return;
     setBusy(true);
     setResetting(true);
@@ -546,7 +547,8 @@ export default function App() {
     try {
       // A native lock event can arrive while the reset is finishing.
       // Apply the successful reset even if that event has already cleared the vault view.
-      await call("reset_local", { confirmation, master });
+      await call("reset_local", { master });
+      skipDeleteConfirmation.current = false;
       clearSensitive();
       setExists(false);
       setSort("recent");
@@ -691,19 +693,17 @@ export default function App() {
     }
   }
   async function performDelete(
-    confirmation: string,
-    confirmationRepeat: string,
-    master: string,
+    master: string | null,
+    skipConfirmation: boolean,
   ) {
     if (!entry || busy) return;
     const id = entry.id;
     setBusy(true);
     try {
-      await request("delete_entry", {
+      skipDeleteConfirmation.current = await request<boolean>("delete_entry", {
         id,
-        confirmation,
-        confirmationRepeat,
         master,
+        skipConfirmation,
       });
       setEntry(null);
       selectedRef.current = null;
@@ -712,8 +712,12 @@ export default function App() {
       reload();
       message("deleted");
     } catch (cause) {
-      fail(cause);
-      throw cause;
+      if (cause === "deletePasswordRequired" && master === null) {
+        skipDeleteConfirmation.current = false;
+        setModal("delete");
+      } else {
+        fail(cause);
+      }
     } finally {
       setBusy(false);
     }
@@ -1130,7 +1134,8 @@ export default function App() {
                     }
                     onDelete={() => {
                       setError("");
-                      setModal("delete");
+                      if (skipDeleteConfirmation.current) void performDelete(null, false);
+                      else setModal("delete");
                     }}
                   />
                 ) : selectedId ? (
@@ -1174,14 +1179,15 @@ export default function App() {
         </MotionPresence>
         {phase === "open" && (
           <MotionPresence>
-            {modal === "reset" ? (
-              <ResetDialog
-                key="reset"
+            {modal === "reset" || modal === "delete" ? (
+              (modal === "reset" || entry) && <DestructiveDialog
+                key={modal}
+                itemTitle={modal === "delete" ? entry?.title : undefined}
                 t={t}
-                busy={resetting}
+                busy={modal === "reset" ? resetting : busy}
                 error={error}
                 onClose={closeModal}
-                onReset={resetLocal}
+                onConfirm={modal === "reset" ? resetLocal : performDelete}
               />
             ) : modal && (
               <VaultDialogs
@@ -1191,7 +1197,6 @@ export default function App() {
                 language={language}
                 busy={busy}
                 error={error}
-                entry={entry}
                 run={request}
                 onBusy={(value) => {
                   if (renderedEpoch === epoch.current) setBusy(value);
@@ -1202,7 +1207,6 @@ export default function App() {
                 onImported={() => {
                   void securityRefresh().catch(fail);
                 }}
-                onDelete={performDelete}
                 onDiscard={() => {
                   const action = pendingAction.current;
                   pendingAction.current = null;

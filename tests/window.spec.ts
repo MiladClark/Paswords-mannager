@@ -59,7 +59,6 @@ async function boot(page: Page, unlocked: boolean, updateMode?: "installed" | "p
         return cloud;
       }
       if(command==='reset_local') {
-        if(args.confirmation!=='موافقم') throw 'resetConfirmationInvalid';
         globalThis.accountProbe.push(command);
         if(args.master!=='A fictional test passphrase') throw 'invalidPassword';
         cloud={...cloud,email:'',enabled:false};
@@ -147,7 +146,7 @@ test("the empty vault fills the window at wide and narrow sizes", async ({ page 
   }
 });
 
-test("sign out requires written consent and the master password before returning to setup", async ({ page }) => {
+test("sign out requires the master password before returning to setup", async ({ page }) => {
   await boot(page, true);
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   const settings = page.getByRole("main", { name: "Settings", exact: true });
@@ -160,19 +159,15 @@ test("sign out requires written consent and the master password before returning
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByText(/permanently deletes your vault/)).toBeVisible();
   await expect(dialog.getByText(/export an encrypted backup/)).toBeVisible();
-  await dialog.getByRole("button", { name: "Back to settings" }).click();
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   expect(await page.evaluate(() => (globalThis as ProbeWindow).accountProbe)).toEqual(["cloud_connect"]);
   await signOut.click();
-  const phrase = dialog.getByLabel("Type «موافقم» to continue");
-  const next = dialog.getByRole("button", { name: "Continue", exact: true });
-  await phrase.fill("I agree");
-  await expect(next).toBeDisabled();
-  await expect(dialog.getByLabel("Master password", { exact: true })).toHaveCount(0);
-  await phrase.fill("موافقم");
-  await next.click();
   const master = dialog.getByLabel("Master password", { exact: true });
   const erase = dialog.getByRole("button", { name: "Erase data and sign out", exact: true });
+  await expect(master).toBeFocused();
+  await expect(erase).toBeDisabled();
+  await expect(dialog.getByRole("switch")).toHaveCount(0);
   await master.fill("incorrect");
   await erase.click();
   await expect(dialog.getByRole("alert")).toBeVisible();
@@ -243,7 +238,7 @@ test("sign out is at the bottom of settings and accessible in a narrow window", 
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
   expect((await new AxeBuilder({ page }).include("dialog").withTags(["wcag2a", "wcag2aa"]).analyze()).violations).toEqual([]);
-  await dialog.getByRole("button", { name: "Back to settings" }).click();
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   await settings.getByRole("button", { name: "Back to vault", exact: true }).click();
   await expect(page.getByRole("button", { name: "Settings", exact: true })).toBeFocused();

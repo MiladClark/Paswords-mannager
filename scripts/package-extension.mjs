@@ -17,8 +17,11 @@ const release = fileURLToPath(new URL("../release/", import.meta.url));
 const manifest = JSON.parse(
   await readFile(path.join(source, "manifest.json"), "utf8"),
 );
-// The Store assigns the published ID. The local public key is for Load unpacked.
-delete manifest.key;
+const unpacked = process.argv.includes("--unpacked");
+const target = unpacked ? "unpacked" : "edge-addons";
+// The public key keeps the unpacked ID stable for the desktop bridge.
+// Edge Add-ons assigns its own ID.
+if (!unpacked) delete manifest.key;
 
 const files = [
   "background.js",
@@ -33,10 +36,10 @@ const files = [
   "icons/128.png",
 ];
 await mkdir(release, { recursive: true });
-const staging = await mkdtemp(path.join(release, "edge-addons-"));
+const staging = await mkdtemp(path.join(release, `${target}-`));
 const destination = path.join(
   release,
-  `PassWards-extension-${manifest.version}-edge-addons.zip`,
+  `PassWards-extension-${manifest.version}-${target}.zip`,
 );
 if (path.dirname(staging) !== path.resolve(release)) {
   throw new Error(
@@ -64,4 +67,4 @@ try {
 } finally {
   await rm(staging, { recursive: true, force: true });
 }
-console.log(`Microsoft Edge Add-ons upload: ${destination}`);
+console.log(`${unpacked ? "Load unpacked archive" : "Microsoft Edge Add-ons upload"}: ${destination}`);

@@ -25,11 +25,7 @@ export const en = {
   resetTitle: "Sign out and erase local data?",
   resetWarning: "This permanently deletes your vault, local automatic backups, settings, and browser connections. You’ll return to setup.",
   resetBackupWarning: "Go back and export an encrypted backup before you continue. Cloud backups and files exported outside the app’s data folder are kept.",
-  resetConfirmationLabel: "Type «موافقم» to continue",
-  resetConfirmationInvalid: "Type «موافقم» exactly to continue.",
-  resetBackToSettings: "Back to settings",
   resetAction: "Erase data and sign out",
-  resetInProgress: "Erasing local data…",
   resetCleanupFailed: "Some local app files couldn’t be removed. Your vault is still here. Close any apps using those files and try again.",
   cloudSwitchBrowser: "Choose Use a different account in your browser.",
   cloudBackupNow: "Back up now",
@@ -229,17 +225,15 @@ export const en = {
   deleteForever: "Delete permanently",
   deleteTitle: "Permanently delete this item?",
   deleteItem: "Delete item",
+  deleteDontAsk: "Don’t ask again",
+  deleteDontAskHint: "Skip the password and dialog for item deletion until you close PassWards.",
+  deletePasswordRequired: "Enter the master password to delete this item.",
   automaticBackups: "Keep automatic encrypted backups on this device",
   automaticBackupHint:
     "Off by default. When enabled, keeps the latest 7 snapshots, at most every 15 minutes after changes while unlocked. Snapshots can contain previously deleted items. Keep a separate backup off this device too.",
   automaticBackupCount: "verified snapshots saved locally",
   backupValidationFailed:
     "Backup verification failed. No completed backup was saved.",
-  deleteAction: "Delete",
-  continueAction: "Continue",
-  deleteMasterTitle: "Confirm deletion",
-  deleteMasterHint:
-    "Enter your master password to delete this item. This cannot be undone.",
   legacyPinRetired:
     "The old device PIN was removed and the vault key was rotated. Only your master password is used now.",
   authCooldown:
@@ -250,17 +244,6 @@ export const en = {
     "Protected key memory is unavailable. Close other applications and try again.",
   sessionGuardUnavailable:
     "Windows session protection could not start. Restart the app and try again.",
-  deleteConfirmHint:
-    "Copy the exact phrase below into both boxes, then continue to password verification.",
-  deleteConfirmation: "Agreement phrase",
-  deleteConfirmationRepeat: "Repeat agreement phrase",
-  deletePinTitle: "Confirm deletion with PIN",
-  deletePinHint:
-    "Enter your PIN to permanently delete this item. Previous item access does not authorize deletion.",
-  deleteSetupHint:
-    "Permanent deletion requires a PIN. Set one up with your master password, then enter it to confirm deletion.",
-  deleteConfirmationInvalid: "Enter the exact agreement phrase in both boxes.",
-  deletePinRequired: "Set up a PIN before permanently deleting an item.",
   deleteBody:
     "This item and its saved password history will be removed. This cannot be undone. Existing backups are not changed.",
   deleted: "Item permanently deleted",
@@ -384,11 +367,7 @@ export const fa: Record<Key, string> = {
   resetTitle: "از حساب خارج می‌شوید و داده‌های محلی را پاک می‌کنید؟",
   resetWarning: "خزانه، بکاپ‌های خودکار محلی، تنظیمات و اتصال مرورگرها برای همیشه پاک می‌شوند. برنامه به صفحهٔ راه‌اندازی برمی‌گردد.",
   resetBackupWarning: "قبل از ادامه برگردید و یک بکاپ رمزگذاری‌شده بگیرید. بکاپ‌های ابری و فایل‌هایی که خارج از پوشهٔ داده‌های برنامه ذخیره کرده‌اید باقی می‌مانند.",
-  resetConfirmationLabel: "برای ادامه بنویسید «موافقم»",
-  resetConfirmationInvalid: "برای ادامه دقیقاً «موافقم» را بنویسید.",
-  resetBackToSettings: "بازگشت به تنظیمات",
   resetAction: "پاک کردن داده‌ها و خروج",
-  resetInProgress: "در حال پاک کردن داده‌های محلی…",
   resetCleanupFailed: "بعضی فایل‌های محلی پاک نشدند. خزانه هنوز باقی است. برنامه‌هایی را که از این فایل‌ها استفاده می‌کنند ببندید و دوباره تلاش کنید.",
   cloudSwitchBrowser: "در مرورگر گزینهٔ استفاده از حساب دیگر را انتخاب کنید.",
   cloudBackupNow: "اکنون پشتیبان بگیر",
@@ -586,32 +565,20 @@ export const fa: Record<Key, string> = {
   deleteForever: "حذف همیشگی",
   deleteTitle: "این آیتم برای همیشه حذف شود؟",
   deleteItem: "حذف آیتم",
+  deleteDontAsk: "دیگر نپرس",
+  deleteDontAskHint: "تا وقتی PassWards باز است، حذف آیتم بدون پنجره و رمز انجام می‌شود.",
+  deletePasswordRequired: "برای حذف این آیتم رمز اصلی را وارد کنید.",
   automaticBackups: "بکاپ خودکار رمز‌شده روی همین دستگاه",
   automaticBackupHint:
     "پیش‌فرض خاموش است؛ هفت نسخه نگهداری می‌شود و ممکن است آیتم‌های حذف‌شده را داشته باشند.",
   automaticBackupCount: "نسخهٔ تأییدشده ذخیره شد",
   backupValidationFailed: "تأیید سلامت بکاپ ناموفق بود.",
-  deleteAction: "حذف",
-  continueAction: "ادامه",
-  deleteMasterTitle: "تأیید حذف",
-  deleteMasterHint: "رمز اصلی را برای حذف وارد کنید. این کار قابل بازگشت نیست.",
   legacyPinRetired:
     "پین قدیمی حذف و کلید خزانه تعویض شد؛ فقط رمز اصلی استفاده می‌شود.",
   authCooldown: "تلاش ناموفق زیاد است؛ کمی صبر کنید.",
   weakMaster: "عبارت عبور غیرقابل‌پیش‌بینی‌تری انتخاب کنید.",
   secureMemoryUnavailable: "حافظهٔ محافظت‌شده در دسترس نیست.",
   sessionGuardUnavailable: "محافظت نشست ویندوز راه‌اندازی نشد.",
-  deleteConfirmHint:
-    "عبارت زیر را دقیقاً در هر دو کادر کپی کنید؛ سپس حذف را با پین تأیید کنید.",
-  deleteConfirmation: "عبارت موافقت",
-  deleteConfirmationRepeat: "تکرار عبارت موافقت",
-  deletePinTitle: "تأیید حذف با پین",
-  deletePinHint:
-    "برای حذف همیشگی این آیتم پین را وارد کنید. باز بودن جزئیات آیتم، مجوز حذف آن نیست.",
-  deleteSetupHint:
-    "حذف همیشگی به پین نیاز دارد. ابتدا با رمز اصلی پین بسازید؛ سپس برای تأیید حذف، آن را وارد کنید.",
-  deleteConfirmationInvalid: "عبارت موافقت را دقیقاً در هر دو کادر وارد کنید.",
-  deletePinRequired: "برای حذف همیشگی، ابتدا پین تنظیم کنید.",
   deleteBody:
     "آیتم و تاریخچهٔ رمزهایش حذف می‌شوند. این کار قابل بازگشت نیست. بکاپ‌های قبلی تغییر نمی‌کنند.",
   deleted: "آیتم برای همیشه حذف شد",

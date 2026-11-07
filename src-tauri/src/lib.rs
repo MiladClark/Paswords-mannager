@@ -312,12 +312,13 @@ async fn authorize_entry(
 async fn delete_entry(
     state: State<'_, VaultState>,
     id: String,
-    confirmation: String,
-    confirmation_repeat: String,
-    master: String,
-) -> vault::Result<()> {
-    let master = Zeroizing::new(master);
-    access(state, move |v| v.delete_forever(&id, &confirmation, &confirmation_repeat, &master)).await
+    master: Option<String>,
+    skip_confirmation: bool,
+) -> vault::Result<bool> {
+    let master = master.map(Zeroizing::new);
+    access(state, move |v| {
+        v.delete_forever(&id, master.as_ref().map(|value| value.as_str()), skip_confirmation)
+    }).await
 }
 #[tauri::command]
 async fn change_master(

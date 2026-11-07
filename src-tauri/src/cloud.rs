@@ -644,7 +644,6 @@ pub(crate) async fn reset_local(
     cloud: State<'_, Cloud>,
     vault: State<'_, VaultState>,
     browser: State<'_, BrowserIntegration>,
-    confirmation: String,
     master: String,
 ) -> Result<()> {
     let cloud = cloud.inner().clone();
@@ -659,7 +658,7 @@ pub(crate) async fn reset_local(
         let result = {
             let mut vault = vault.0.lock().map_err(|_| "storageError")?;
             let mut browser = browser.0.lock().map_err(|_| "storageError")?;
-            vault.reset_local(&confirmation, &master, |directory| {
+            vault.reset_local(&master, |directory| {
                 if directory != app_data || cloud.0.path.parent() != Some(directory) {
                     return Err("resetCleanupFailed".into());
                 }

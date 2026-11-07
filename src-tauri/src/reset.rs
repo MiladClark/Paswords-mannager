@@ -92,7 +92,7 @@ mod tests {
     use crate::vault::{Entry, Vault};
 
     #[test]
-    fn reset_requires_consent_and_master_then_clears_persisted_vault_and_local_files() {
+    fn reset_requires_master_then_clears_persisted_vault_and_local_files() {
         let test = tempfile::tempdir().unwrap();
         let directory = test.path().join("passwards");
         let path = directory.join("vault.sqlite3");
@@ -131,13 +131,7 @@ mod tests {
 
         assert_eq!(
             vault
-                .reset_local("I agree", master, purge_auxiliary)
-                .unwrap_err(),
-            "resetConfirmationInvalid"
-        );
-        assert_eq!(
-            vault
-                .reset_local("موافقم", "incorrect master", purge_auxiliary)
+                .reset_local("incorrect master", purge_auxiliary)
                 .unwrap_err(),
             "invalidPassword"
         );
@@ -145,7 +139,7 @@ mod tests {
         assert!(directory.join("cloud-backup.device").exists());
         assert_eq!(
             vault
-                .reset_local("موافقم", master, |_| Err("resetCleanupFailed".into()))
+                .reset_local(master, |_| Err("resetCleanupFailed".into()))
                 .unwrap_err(),
             "resetCleanupFailed"
         );
@@ -153,7 +147,7 @@ mod tests {
         assert!(vault.view_entry(&entry.entry.id).is_ok());
 
         vault
-            .reset_local("موافقم", master, purge_auxiliary)
+            .reset_local(master, purge_auxiliary)
             .unwrap();
         assert!(!vault.status().unwrap().exists);
         assert!(!vault.status().unwrap().unlocked);
