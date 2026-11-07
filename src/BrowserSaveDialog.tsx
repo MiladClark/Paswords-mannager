@@ -23,7 +23,7 @@ export default function BrowserSaveDialog({
   error: string;
   onDecide: (
     allow: boolean,
-    secret: string,
+    secret: string | null,
     target: string,
     username: string,
     title: string,
@@ -36,10 +36,10 @@ export default function BrowserSaveDialog({
     request.accounts.length === 1 ? request.accounts[0].id : "",
   );
   const updating = request.kind === "update";
-  const cancel = () => void onDecide(false, "", "", "", "");
+  const cancel = () => void onDecide(false, null, "", "", "");
   async function submit(event: FormEvent) {
     event.preventDefault();
-    await onDecide(true, secret, target, username, title);
+    await onDecide(true, updating ? secret : null, target, username, title);
     setSecret("");
   }
   return (
@@ -105,14 +105,16 @@ export default function BrowserSaveDialog({
             </div>
           </>
         )}
-        <SecretInput
-          id="browser-save-master"
-          label={t("master")}
-          value={secret}
-          onChange={setSecret}
-          t={t}
-          autoFocus
-        />
+        {updating && (
+          <SecretInput
+            id="browser-save-master"
+            label={t("master")}
+            value={secret}
+            onChange={setSecret}
+            t={t}
+            autoFocus
+          />
+        )}
         {error && (
           <p className="form-error" role="alert">
             {error}

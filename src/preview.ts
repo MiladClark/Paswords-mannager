@@ -125,9 +125,9 @@ export async function request(
       browserSaveHandled = true;
       return null;
     }
-    checkMaster(args.secret);
     const updating =
       new URLSearchParams(location.search).get("browser-save") === "update";
+    if (updating) checkMaster(args.secret);
     const entry = updating
       ? entries.find((e) => e.id === args.target)!
       : {

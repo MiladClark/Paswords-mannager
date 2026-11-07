@@ -265,7 +265,7 @@ export default function App() {
   }, [phase, showSettings, modal, !!draft, busy, browserFill?.id, browserSave?.id, fail]);
   async function decideBrowserSave(
     allow: boolean,
-    secret: string,
+    secret: string | null,
     target: string,
     username: string,
     title: string,

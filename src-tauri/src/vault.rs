@@ -540,7 +540,7 @@ impl Vault {
         self.view_entry(id)
     }
 
-    pub fn authorize_browser_save(&mut self, master: &str) -> Result<()> { self.touch()?; self.master_key(master)?; Ok(()) }
+    pub fn authorize_browser_update(&mut self, master: &str) -> Result<()> { self.touch()?; self.master_key(master)?; Ok(()) }
     pub fn browser_password_digest(&mut self, id: &str) -> Result<Vec<u8>> {
         use sha2::{Digest, Sha256};
         self.expire();

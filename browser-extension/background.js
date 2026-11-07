@@ -343,25 +343,11 @@ async function handle(message, sender) {
     ].includes(message?.type)
   )
     return captures.handle(message, sender, popup);
-  if (!["matches", "detect", "fill"].includes(message?.type))
+  if (!["matches", "fill"].includes(message?.type))
     throw Error("browserDenied");
   const context = await source(sender, true);
   if (message.type === "fill") return fill(context, String(message.id));
   const accounts = await matches(context);
-  if (message.type === "detect") {
-    await chrome.action.setBadgeText({
-      tabId: context.tab.id,
-      text: captures.state(context.tab.id, context.site)
-        ? "Save"
-        : accounts.length
-          ? String(accounts.length)
-          : "",
-    });
-    await chrome.action.setBadgeBackgroundColor({
-      tabId: context.tab.id,
-      color: "#45464a",
-    });
-  }
   return { accounts, site: context.site };
 }
 chrome.runtime.onMessage.addListener((message, sender, respond) => {

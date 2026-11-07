@@ -45,7 +45,7 @@
 
 ## Developer notes
 
-Manifest V3; stable unpacked extension ID `mhofghlpaigblofliecafkfgeklbgfdi`. Native host `com.passward.bridge`. No remote scripts or libraries. Trusted user edits followed by a supported form submission, or an explicit popup capture, can create a transient save candidate. Native duplicate classification never returns the stored password. Desktop approval independently verifies the master, exact origin/account and stale-password conflict before persisting. The content script requests matching account metadata; credentials only enter the isolated content world after a fresh desktop approval and final tab/document/origin checks.
+Manifest V3; stable unpacked extension ID `mhofghlpaigblofliecafkfgeklbgfdi`. Native host `com.passward.bridge`. No remote scripts or libraries. Trusted user edits followed by a supported form submission, or an explicit popup capture, can create a transient save candidate. Native duplicate classification never returns the stored password. Desktop approval requires an unlocked vault and checks the origin and account. Updating an existing login also verifies the master password and checks for stale-password conflicts. Login suggestions appear in the toolbar popup. Autofill credentials only enter the isolated content world after a fresh desktop approval and final tab/document/origin checks.
 
 Official APIs: [Chrome Native Messaging](https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging), [Edge Native Messaging](https://learn.microsoft.com/en-us/microsoft-edge/extensions/developer-guide/native-messaging), [Chrome scripting](https://developer.chrome.com/docs/extensions/reference/api/scripting), [Chrome storage](https://developer.chrome.com/docs/extensions/reference/api/storage).
 

@@ -1,18 +1,12 @@
 (() => {
   if (window.top !== window || globalThis.__passward) return;
-  let host,
-    button,
-    panel,
-    timer;
-  let capture = null,
-    offered = "";
+  let timer;
+  let offered = "";
   const edited = new WeakSet();
-  let focusedField = null,
-    pagePreferences = { hidden: false },
-    suppressFocusUntil = 0,
-    sequence = 0;
-  let autoForms = new WeakSet(),
-    scannedUrl = location.href;
+  let focusedField = null;
+  let pagePreferences = { hidden: false, paired: false };
+  let autoForms = new WeakSet();
+  let scannedUrl = location.href;
   const dialogSelector = 'dialog[open],[role="dialog"],[aria-modal="true"]';
   const visible = (input, writable = true) => {
     const s = getComputedStyle(input),
@@ -221,7 +215,6 @@
       const input = event.composedPath()[0];
       if (event.isTrusted && input instanceof HTMLInputElement) {
         edited.add(input);
-        if (input.value) closePanel();
       }
     },
     true,
@@ -310,8 +303,6 @@
         !set(next.password, password))
     )
       return false;
-    closePanel();
-    suppressFocusUntil = Date.now() + 400;
     (next?.password || next?.user || g.user)?.focus();
     if (autoSubmit) {
       const form = (next?.password || next?.user || g.user)?.form;
@@ -345,201 +336,18 @@
     if (!result?.ok) throw Error(result?.error || "browserUnavailable");
     return result.data;
   };
-  function node(tag, text, className) {
-    const element = document.createElement(tag);
-    if (text) element.textContent = text;
-    if (className) element.className = className;
-    return element;
-  }
-  function closePanel(restore = false) {
-    sequence++;
-    if (!panel) return;
-    panel.hidden = true;
-    button.setAttribute("aria-expanded", "false");
-    if (restore && focusedField?.isConnected) {
-      suppressFocusUntil = Date.now() + 200;
-      focusedField.focus();
-    }
-  }
-  function place() {
-    if (!host) return;
-    const anchored = focusedField?.isConnected && visible(focusedField);
-    button.classList.toggle("field-button", Boolean(anchored));
-    if (anchored) {
-      const rect = focusedField.getBoundingClientRect();
-      if (rect.bottom < 0 || rect.top > innerHeight) {
-        host.hidden = true;
-        return;
-      }
-      const size = matchMedia("(pointer:coarse)").matches ? 40 : 30;
-      Object.assign(button.style, {
-        left: Math.min(innerWidth - size - 8, rect.right + 6) + "px",
-        top: Math.max(6, rect.top + (rect.height - size) / 2) + "px",
-        right: "auto",
-        bottom: "auto",
-      });
-      const width = Math.min(320, innerWidth - 16);
-      const height = Math.min(panel.scrollHeight || 260, 360);
-      const below = innerHeight - rect.bottom - 14;
-      Object.assign(panel.style, {
-        left: Math.max(8, Math.min(rect.left, innerWidth - width - 8)) + "px",
-        width: width + "px",
-        top:
-          (below >= Math.min(height, 140)
-            ? rect.bottom + 6
-            : Math.max(8, rect.top - height - 6)) + "px",
-        right: "auto",
-        bottom: "auto",
-        maxHeight:
-          Math.max(100, Math.min(360, below >= 140 ? below : rect.top - 14)) +
-          "px",
-      });
-    } else host.hidden = true;
-  }
-
-  function mount() {
-    if (host?.isConnected) return;
-    host = node("div");
-    host.id = "passward-assistant";
-    host.style.cssText =
-      "position:fixed!important;inset:0!important;z-index:2147483647!important;pointer-events:none!important;";
-    const shadow = host.attachShadow({ mode: "closed" });
-    const style = node("style");
-    style.textContent =
-      ":host{font:13px/1.5 system-ui,sans-serif;color-scheme:dark;color:#ececea}*{box-sizing:border-box}[hidden]{display:none!important}button,input,select{font:inherit}button{cursor:pointer;color:inherit;background:#28292c;border:1px solid #48494d;border-radius:7px;padding:8px 11px;min-height:36px;text-align:start;transition:background .14s ease,opacity .14s ease}button:hover{background:#343539}button:disabled{opacity:.55;cursor:default}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid #91bec9;outline-offset:2px}.trigger{position:fixed;pointer-events:auto;background:#222326;color:#ececea;box-shadow:0 2px 10px #0002}.field-button{width:30px;height:30px;min-height:30px;padding:4px;font-size:0;display:grid;place-items:center;border-color:#6b8790}.field-button:before{content:'✳';font-size:19px;line-height:1;color:#a1cbd6}.panel{position:fixed;pointer-events:auto;background:#202123;border:1px solid #4a4b4f;border-radius:10px;padding:10px;overflow:auto;box-shadow:0 8px 24px #0003}.panel:not([hidden]){animation:passwards-in .16s ease-out}.heading{font-size:11px;color:#b8bbc1;margin:1px 3px 8px;overflow-wrap:anywhere}.panel button{display:block;width:100%;margin-top:4px}.account{border:0;background:transparent;padding:9px 10px}.account strong,.account small{display:block}.account small,.hint{font-size:12px;color:#b4b6bc;overflow-wrap:anywhere}.panel p{margin:7px 3px}.quiet{border:0;background:transparent;font-size:12px;color:#b4b6bc}.primary{background:#e1e1dd;color:#242527;border-color:#e1e1dd}.primary:hover{background:#f0f0ec}@keyframes passwards-in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}@media(pointer:coarse){button{min-height:44px}.field-button{width:40px;height:40px}}@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}";
-    panel = node("div", null, "panel");
-    panel.hidden = true;
-    panel.setAttribute("role", "region");
-    panel.setAttribute("aria-label", "PassWards login assistant");
-    button = node("button", "PassWards", "trigger");
-    button.type = "button";
-    button.setAttribute("aria-label", "PassWards: show login suggestions");
-    button.setAttribute("aria-expanded", "false");
-    button.addEventListener("click", (event) => {
-      if (!event.isTrusted) return;
-      if (!panel.hidden) {
-        closePanel();
-        return;
-      }
-      void choose();
-    });
-    panel.addEventListener("keydown", (event) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        event.stopPropagation();
-        closePanel(true);
-      }
-      if (
-        !["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key) ||
-        ["INPUT", "SELECT"].includes(event.target.tagName)
-      )
-        return;
-      const buttons = Array.from(
-        panel.querySelectorAll("button:not(:disabled)"),
-      );
-      if (!buttons.length) return;
-      event.preventDefault();
-      const index = buttons.indexOf(event.target);
-      buttons[
-        event.key === "Home"
-          ? 0
-          : event.key === "End"
-            ? buttons.length - 1
-            : (index + (event.key === "ArrowDown" ? 1 : -1) + buttons.length) %
-              buttons.length
-      ].focus();
-    });
-    shadow.append(style, panel, button);
-    document.documentElement.append(host);
-  }
-  function begin() {
-    mount();
-    panel.replaceChildren();
-    panel.hidden = false;
-    host.hidden = false;
-    button.setAttribute("aria-expanded", "true");
-    panel.append(node("p", "PassWards · " + location.hostname, "heading"));
-    place();
-    return ++sequence;
-  }
-  function action(text, callback, className = "") {
-    const item = node("button", text, className);
-    item.type = "button";
-    item.addEventListener("click", (event) => {
-      if (event.isTrusted) void callback(item);
-    });
-    panel.append(item);
-    return item;
-  }
-  function errorText(error) {
-    if (error.message === "locked")
-      return "Unlock your vault in PassWards, then try again.";
-    if (error.message === "browserUnpaired")
-      return "Connect this browser in the PassWards app.";
-    if (error.message === "browserExpired")
-      return "This request expired. Try again.";
-    if (error.message === "pageChanged")
-      return "The page changed. Your saved login is still in the vault.";
-    return "Open PassWards and try again.";
-  }
-  async function choose() {
-    const ticket = begin();
-    const feedback = node("p", "Looking for saved logins…", "hint");
-    feedback.setAttribute("role", "status");
-    panel.append(feedback);
-    try {
-      const { accounts } = await send({ type: "detect" });
-      if (ticket !== sequence) return;
-      feedback.textContent = accounts.length
-        ? "Choose a login"
-        : "No saved login. Sign in to get a save suggestion.";
-      for (const account of accounts) {
-        const row = action(
-          "",
-          async () => {
-            for (const b of panel.querySelectorAll("button")) b.disabled = true;
-            feedback.textContent = "Approve the fill in PassWards…";
-            try {
-              await send({ type: "fill", id: account.id });
-              closePanel(true);
-            } catch (error) {
-              feedback.textContent = errorText(error);
-              for (const b of panel.querySelectorAll("button"))
-                b.disabled = false;
-            }
-          },
-          "account",
-        );
-        row.append(
-          node("strong", account.title),
-          node("small", account.username),
-        );
-      }
-    } catch (error) {
-      if (ticket !== sequence) return;
-      feedback.textContent = errorText(error);
-      action("Open PassWards", () => send({ type: "focus" }));
-    }
-    action("Close", () => closePanel(), "quiet");
-    place();
-  }
   async function scan() {
     if (document.hidden) return;
     if (location.href !== scannedUrl) {
-      autoForms = new WeakSet();
       scannedUrl = location.href;
+      autoForms = new WeakSet();
+      focusedField = null;
     }
     try {
       pagePreferences = await send({ type: "pageSettings" });
-      if (!pagePreferences.paired) {
-        if (host) host.hidden = true;
-        return;
-      }
-      const result = await send({ type: "captureState" });
-      capture = result.capture;
+      if (!pagePreferences.paired) return;
+      const { capture } = await send({ type: "captureState" });
       if (capture) {
-        closePanel();
-        if (host) host.hidden = true;
         if (
           capture.automatic &&
           offered !== capture.id &&
@@ -550,116 +358,45 @@
         }
         return;
       }
-    } catch {}
-    if (document.hasFocus() && pagePreferences.paired) {
+      if (!document.hasFocus()) return;
       const form = group();
       const anchor = form?.user || form?.password;
-      if (anchor && !autoForms.has(anchor)) {
-        autoForms.add(anchor);
-        if (!form.password?.value && !form.user?.value) {
-          const ticket = sequence;
-          try {
-            const result = await send({ type: "openLoginPopup" });
-            if (result.opened) {
-              if (ticket === sequence) focusedField = null;
-              return;
-            }
-          } catch {}
-          if (
-            ticket === sequence &&
-            document.hasFocus() &&
-            visible(anchor) &&
-            !form.password?.value &&
-            !form.user?.value
-          ) {
-            focusedField = anchor;
-            await choose();
-            return;
-          }
-        }
+      if (
+        !anchor ||
+        autoForms.has(anchor) ||
+        form.password?.value ||
+        form.user?.value
+      )
+        return;
+      const seen = autoForms;
+      seen.add(anchor);
+      try {
+        const result = await send({ type: "openLoginPopup" });
+        if (!result.attempted) seen.delete(anchor);
+      } catch {
+        seen.delete(anchor);
       }
-    }
-    if (focusedField?.isConnected && visible(focusedField)) {
-      mount();
-      host.hidden = false;
-      place();
-    } else if (host) host.hidden = true;
+    } catch {}
   }
+  // Remember the form when opening the toolbar popup takes focus off the page.
   document.addEventListener(
     "focusin",
     (event) => {
-      if (
-        event.composedPath().includes(host) ||
-        Date.now() < suppressFocusUntil
-      )
-        return;
       const input = event.composedPath()[0];
-      if (
-        !(input instanceof HTMLInputElement) ||
-        !visible(input) ||
-        !pagePreferences.paired
-      )
-        return;
+      if (!(input instanceof HTMLInputElement) || !visible(input)) return;
       focusedField = input;
       const login = group();
-      if (input !== login?.password && input !== login?.user) {
-        focusedField = null;
-        closePanel();
-        if (host && !capture) host.hidden = true;
-        return;
-      }
-      if (login.user) autoForms.add(login.user);
-      if (login.password) autoForms.add(login.password);
-      capture = null;
-      mount();
-      host.hidden = false;
-      place();
-      void choose();
+      if (input !== login?.password && input !== login?.user) focusedField = null;
     },
     true,
   );
-  document.addEventListener(
-    "keydown",
-    (event) => {
-      if (event.key === "Escape" && panel && !panel.hidden) {
-        closePanel(true);
-        return;
-      }
-      if (
-        event.target === focusedField &&
-        event.key === "ArrowDown" &&
-        pagePreferences.paired
-      ) {
-        event.preventDefault();
-        void choose().then(() =>
-          panel.querySelector("button:not(:disabled)")?.focus(),
-        );
-      }
-    },
-    true,
-  );
-  document.addEventListener(
-    "pointerdown",
-    (event) => {
-      if (
-        panel &&
-        !event.composedPath().includes(host) &&
-        event.target !== focusedField
-      )
-        closePanel();
-    },
-    true,
-  );
-  addEventListener("resize", place);
-  addEventListener("scroll", place, true);
   globalThis.__passward = Object.freeze({
     version: 3,
     detect,
     fill,
     captureManual,
   });
-  new MutationObserver((records) => {
-    if (records.every((record) => record.target === host)) return;
+  new MutationObserver(() => {
     clearTimeout(timer);
     timer = setTimeout(() => void scan(), 600);
   }).observe(document.documentElement, {

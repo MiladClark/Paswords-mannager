@@ -144,7 +144,7 @@ export const en = {
   browserSaveTitle: "Save a login from your browser?",
   browserUpdateTitle: "Update a saved password?",
   browserSaveHint:
-    "Check the website and account. Approve with your master password to save the submitted login in your vault.",
+    "Check the website and account before saving this login to your vault.",
   browserUpdateHint:
     "Only the password of the selected account will change. Your previous password stays in its password history.",
   browserUpdateAccount: "Account to update",
@@ -485,7 +485,7 @@ export const fa: Record<Key, string> = {
   preview: "پیش‌نمایش طراحی · اطلاعات نمونه و موقت",
   browserSaveTitle: "ورود مرورگر در خزانه ذخیره شود؟",
   browserUpdateTitle: "رمز ذخیره‌شده به‌روزرسانی شود؟",
-  browserSaveHint: "سایت و حساب را بررسی و ذخیره را با رمز اصلی تأیید کنید.",
+  browserSaveHint: "پیش از ذخیرهٔ این ورود در خزانه، سایت و حساب را بررسی کنید.",
   browserUpdateHint:
     "فقط رمز حساب انتخاب‌شده تغییر می‌کند. رمز قبلی در تاریخچه می‌ماند.",
   browserUpdateAccount: "حساب برای به‌روزرسانی",

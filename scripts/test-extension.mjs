@@ -198,9 +198,7 @@ try {
       globalThis.__autoPopupCalls = 0;
       chrome.action.openPopup = async () => {
         globalThis.__autoPopupCalls++;
-        throw Error(
-          "Fictional browser popup restriction: exercise inline fallback",
-        );
+        throw Error("Fictional browser popup restriction");
       };
     });
     return worker;
@@ -243,21 +241,27 @@ try {
   check(
     "Pairing is idempotent and extension messages cannot disconnect a paired browser",
   );
-  await page.waitForSelector("#passward-assistant", { state: "attached" });
+  await expect
+    .poll(() => worker.evaluate(() => globalThis.__autoPopupCalls))
+    .toBe(1);
+  assert.equal(await page.locator("#passward-assistant").count(), 0);
   const initialOpenCalls = await worker.evaluate(
     () => globalThis.__autoPopupCalls,
   );
   assert.equal(initialOpenCalls, 1);
   assert.equal((await control("pending")).pending, null);
   assert.equal(await page.locator("input[name=password]").inputValue(), "");
-  await page.keyboard.press("Escape");
+  const emailField = page.getByLabel("Email", { exact: true });
+  await emailField.focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(emailField).toBeFocused();
   await page.waitForTimeout(2300);
   assert.equal(
     await worker.evaluate(() => globalThis.__autoPopupCalls),
     initialOpenCalls,
   );
   check(
-    "Login form opens automatically without a click; blocked toolbar popup falls back inline without filling or repeated opening",
+    "The toolbar popup is attempted once; a blocked popup injects no controls or autofills",
   );
   const matches = await message({ type: "matches" });
   assert.equal(matches.ok, true, JSON.stringify(matches));
@@ -372,7 +376,7 @@ try {
   }
   assert.equal(captured?.kind, "save");
   assert.equal(captured.automatic, true);
-  await page.locator("#passward-assistant").waitFor({ state: "hidden" });
+  assert.equal(await page.locator("#passward-assistant").count(), 0);
   for (let n = 0; n < 30; n++) {
     if (
       (await worker.evaluate(() => globalThis.__autoPopupCalls)) >
@@ -486,7 +490,7 @@ try {
     await popup.getByRole("button", { name: "Save", exact: true }).count(),
     0,
   );
-  await page.locator("#passward-assistant").waitFor({ state: "hidden" });
+  assert.equal(await page.locator("#passward-assistant").count(), 0);
   check("Password updates also expose exactly one action in the popup");
   saving = message({ type: "saveLogin", id: captured.id });
   await waitPending("pendingSave");
@@ -801,11 +805,10 @@ try {
       '<form method="post"><label>Email<input type="email" autocomplete="username" name="email"></label><label>Password<input type="password" name="password" autocomplete="current-password"></label><button type="submit">Sign in</button></form>',
     );
   });
-  await page.waitForSelector("#passward-assistant", { state: "attached" });
-  assert.equal(
-    await worker.evaluate(() => globalThis.__autoPopupCalls),
-    beforeDynamic + 1,
-  );
+  await expect
+    .poll(() => worker.evaluate(() => globalThis.__autoPopupCalls))
+    .toBe(beforeDynamic + 1);
+  assert.equal(await page.locator("#passward-assistant").count(), 0);
   check(
     "Dynamically inserted login forms are detected automatically; search pages stay quiet",
   );
@@ -840,40 +843,7 @@ try {
     };
   });
   check(
-    "Successful toolbar opening does not duplicate the inline picker; background tabs never open it",
-  );
-
-  await page.goto(site + "/login");
-  await page.bringToFront();
-  // The closed-shadow assistant is mounted only after pairing is verified.
-  // Wait for its host before exercising keyboard selection in the login field.
-  await page.waitForSelector("#passward-assistant", { state: "attached" });
-  await page.getByLabel("Email", { exact: true }).focus();
-  await page.keyboard.press("ArrowDown");
-  await page.waitForFunction(
-    () => document.activeElement?.id === "passward-assistant",
-  );
-  await page.screenshot({
-    path: path.join(root, "artifacts/extension-inline-logins.png"),
-    animations: "disabled",
-  });
-  await page.keyboard.press("Enter");
-  const inlinePending = await waitPending();
-  assert.equal(
-    await page.getByLabel("Password", { exact: true }).inputValue(),
-    "",
-  );
-  await control("approve");
-  await page.waitForFunction(() =>
-    Boolean(document.querySelector("input[name=password]").value),
-  );
-  assert.equal(
-    await page.getByLabel("Email", { exact: true }).inputValue(),
-    inlinePending.username,
-  );
-  assert.equal(await page.evaluate(() => window.submitted), false);
-  check(
-    "Inline keyboard suggestions fill the chosen login only after desktop approval",
+    "Successful toolbar opening adds no website UI; background tabs never open it",
   );
 
   await popup.evaluate(() => chrome.storage.local.set({ autoSubmit: true }));
@@ -1055,7 +1025,10 @@ try {
     originalToken,
   );
   assert.equal((await message({ type: "matches" })).ok, true);
-  await page.waitForSelector("#passward-assistant", { state: "attached" });
+  await expect
+    .poll(() => worker.evaluate(() => globalThis.__autoPopupCalls))
+    .toBe(1);
+  assert.equal(await page.locator("#passward-assistant").count(), 0);
   check(
     "Browser restart preserves pairing and automatic detection; locking the app never clears the token",
   );

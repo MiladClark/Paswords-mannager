@@ -101,7 +101,7 @@ fn main() {
             "approveSave" | "denySave" => {
                 let p = bridge.pending_save().expect("pending save");
                 let target = p.accounts.first().map(|a| a.id.as_str()).unwrap_or("");
-                let id = bridge.decide_save(vault, &SaveDecision { id: p.id.to_string(), allow: command["op"] == "approveSave", secret: (MASTER).to_string(), target: (target).to_string(), username: p.username.to_string(), title: p.title.to_string() }).unwrap();
+                let id = bridge.decide_save(vault, &SaveDecision { id: p.id.to_string(), allow: command["op"] == "approveSave", secret: (p.kind == "update").then(|| MASTER.to_string()), target: (target).to_string(), username: p.username.to_string(), title: p.title.to_string() }).unwrap();
                 json!({"done":true,"id":id})
             }
             "savedAccounts" => {

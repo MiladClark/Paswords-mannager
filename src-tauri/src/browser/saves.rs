@@ -30,7 +30,7 @@ mod tests {
         (dir, vault, SaveState::default())
     }
     #[test]
-    fn saves_need_master_approval_and_results_are_client_bound_and_one_use() {
+    fn new_saves_need_an_unlocked_vault_and_results_are_client_bound_and_one_use() {
         let (_dir, mut vault, mut state) = setup();
         let r = request("requestSave", "fictional-user", "Fictional-save-secret!");
         state.handle(&mut vault, "client", &r).unwrap();
@@ -41,34 +41,20 @@ mod tests {
                 .contains("Fictional-save-secret!")
         );
         assert!(vault.browser_matches(&info.origin).unwrap().is_empty());
-        assert!(
-            state
-                .decide(
-                    &mut vault,
-                    &SaveDecision {
-                        id: info.id.to_string(),
-                        allow: true,
-                        secret: ("wrong master").to_string(),
-                        target: ("").to_string(),
-                        username: info.username.to_string(),
-                        title: info.title.to_string()
-                    }
-                )
-                .is_err()
-        );
+        let decision = SaveDecision {
+            id: info.id.clone(),
+            allow: true,
+            secret: None,
+            target: String::new(),
+            username: info.username.clone(),
+            title: info.title.clone(),
+        };
+        vault.lock();
+        assert_eq!(state.decide(&mut vault, &decision), Err("locked".into()));
+        vault.unlock(MASTER).unwrap();
         assert!(vault.browser_matches(&info.origin).unwrap().is_empty());
         let id = state
-            .decide(
-                &mut vault,
-                &SaveDecision {
-                    id: info.id.to_string(),
-                    allow: true,
-                    secret: (MASTER).to_string(),
-                    target: ("").to_string(),
-                    username: info.username.to_string(),
-                    title: info.title.to_string(),
-                },
-            )
+            .decide(&mut vault, &decision)
             .unwrap()
             .unwrap();
         assert_eq!(vault.get(&id).unwrap().password, "Fictional-save-secret!");
@@ -106,7 +92,7 @@ mod tests {
                 &SaveDecision {
                     id: p.id.to_string(),
                     allow: true,
-                    secret: (MASTER).to_string(),
+                    secret: None,
                     target: ("").to_string(),
                     username: ("user").to_string(),
                     title: ("My account").to_string(),
@@ -129,6 +115,17 @@ mod tests {
             .unwrap();
         let p = state.pending().unwrap();
         assert_eq!(p.kind, "update");
+        let mut decision = SaveDecision {
+            id: p.id.clone(),
+            allow: true,
+            secret: None,
+            target: id.clone(),
+            username: "user".into(),
+            title: "ignored".into(),
+        };
+        assert_eq!(state.decide(&mut vault, &decision), Err("invalidPassword".into()));
+        decision.secret = Some("wrong master".into());
+        assert_eq!(state.decide(&mut vault, &decision), Err("invalidPassword".into()));
         assert!(
             state
                 .decide(
@@ -136,7 +133,7 @@ mod tests {
                     &SaveDecision {
                         id: p.id.to_string(),
                         allow: true,
-                        secret: (MASTER).to_string(),
+                        secret: Some(MASTER.into()),
                         target: ("wrong-id").to_string(),
                         username: ("user").to_string(),
                         title: ("ignored").to_string()
@@ -150,7 +147,7 @@ mod tests {
                 &SaveDecision {
                     id: p.id.to_string(),
                     allow: true,
-                    secret: (MASTER).to_string(),
+                    secret: Some(MASTER.into()),
                     target: id.to_string(),
                     username: ("user").to_string(),
                     title: ("ignored").to_string(),
@@ -181,7 +178,7 @@ mod tests {
                 &SaveDecision {
                     id: p.id.to_string(),
                     allow: true,
-                    secret: (MASTER).to_string(),
+                    secret: Some(MASTER.into()),
                     target: id.to_string(),
                     username: ("user").to_string(),
                     title: ("ignored").to_string()
@@ -203,7 +200,7 @@ mod tests {
                 &SaveDecision {
                     id: p.id.to_string(),
                     allow: false,
-                    secret: ("").to_string(),
+                    secret: None,
                     target: ("").to_string(),
                     username: ("").to_string(),
                     title: ("").to_string(),
@@ -228,7 +225,7 @@ mod tests {
 pub struct SaveDecision {
     pub id: String,
     pub allow: bool,
-    pub secret: String,
+    pub secret: Option<String>,
     pub target: String,
     pub username: String,
     pub title: String,
@@ -380,7 +377,6 @@ impl SaveState {
     pub fn decide(&mut self, vault: &mut Vault, decision: &SaveDecision) -> Result<Option<String>> {
         let id = decision.id.as_str();
         let allow = decision.allow;
-        let master = decision.secret.as_str();
         let target = decision.target.as_str();
         let username = decision.username.as_str();
         let title = decision.title.as_str();
@@ -395,9 +391,9 @@ impl SaveState {
             p.outcome = Some("declined".into());
             return Ok(None);
         }
-        vault.authorize_browser_save(master)?;
         let password = p.password.as_ref().ok_or("browserExpired")?;
         let entry = if p.info.kind == "update" {
+            vault.authorize_browser_update(decision.secret.as_deref().ok_or("invalidPassword")?)?;
             let expected = p
                 .previous
                 .iter()

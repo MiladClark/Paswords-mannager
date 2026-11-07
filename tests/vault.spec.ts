@@ -526,7 +526,7 @@ test("reduced motion skips animations for menus and detail transitions", async (
 });
 
 for (const kind of ["new", "update"] as const) {
-  test(`browser ${kind} approval verifies master and updates the vault`, async ({
+  test(`browser ${kind} approval ${kind === "new" ? "saves without master re-entry" : "requires the master password"}`, async ({
     page,
   }) => {
     await enter(page, `&browser-save=${kind}`);
@@ -545,24 +545,21 @@ for (const kind of ["new", "update"] as const) {
       (await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa"]).analyze())
         .violations,
     ).toEqual([]);
-    if (kind === "new")
+    const master = dialog.getByLabel("Master password", { exact: true });
+    if (kind === "new") {
+      await expect(master).toHaveCount(0);
       await dialog
         .getByLabel("Name", { exact: true })
         .fill("Saved from browser");
-    await dialog
-      .getByLabel("Master password", { exact: true })
-      .fill("Wrong fictional master");
-    await dialog
-      .getByRole("button", {
-        name: kind === "new" ? "Save login" : "Update password",
-        exact: true,
-      })
-      .click();
-    await expect(dialog.getByRole("alert")).toBeVisible();
-    await expect(page.locator(".entry-row")).toHaveCount(3);
-    await dialog
-      .getByLabel("Master password", { exact: true })
-      .fill("A fictional test passphrase");
+    } else {
+      await master.fill("Wrong fictional master");
+      await dialog
+        .getByRole("button", { name: "Update password", exact: true })
+        .click();
+      await expect(dialog.getByRole("alert")).toBeVisible();
+      await expect(page.locator(".entry-row")).toHaveCount(3);
+      await master.fill("A fictional test passphrase");
+    }
     await dialog
       .getByRole("button", {
         name: kind === "new" ? "Save login" : "Update password",
