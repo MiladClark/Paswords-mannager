@@ -1,5 +1,5 @@
 .devtune-app {
-  min-height: 100dvh;
+  height: 100%;
 }
 body:has(.devtune-splash),
 body:has(.devtune-splash) .workspace {

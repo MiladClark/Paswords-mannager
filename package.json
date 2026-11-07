@@ -1,7 +1,7 @@
 {
   "name": "passward",
   "private": true,
-  "version": "0.3.2",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -15,6 +15,7 @@
     "test:core": "cargo test --manifest-path src-tauri/Cargo.toml --lib --no-default-features",
     "check:core": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --no-default-features -- -D warnings",
     "build:extension": "node scripts/build-extension.mjs",
+    "package:extension": "node scripts/package-extension.mjs",
     "test:extension": "node scripts/test-extension.mjs",
     "check:version": "node scripts/check-version.mjs",
     "package:release": "node scripts/package-release.mjs"

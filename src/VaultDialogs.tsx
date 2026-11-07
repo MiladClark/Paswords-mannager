@@ -1,20 +1,10 @@
 import { useState, type FormEvent } from "react";
-import {
-  ArrowLeft,
-  ArrowRight,
-  CircleNotch,
-  DownloadSimple,
-  Key,
-  ShieldCheck,
-  UploadSimple,
-} from "@phosphor-icons/react";
+import { CircleNotch } from "@phosphor-icons/react";
 import type { Entry } from "./api";
 import type { Key as TextKey, Language } from "./i18n";
 import { Dialog, SecretInput, type Translate } from "./ui";
-import BrowserSettings from "./BrowserSettings";
 import DeleteDialog from "./DeleteDialog";
-import AutomaticBackups from "./AutomaticBackups";
-export type Modal = "settings" | "master" | "import" | "delete" | "discard";
+export type Modal = "master" | "import" | "delete" | "discard";
 interface Props {
   modal: Modal;
   t: Translate;
@@ -26,7 +16,6 @@ interface Props {
   onBusy: (value: boolean) => void;
   onError: (cause: unknown) => void;
   onClose: () => void;
-  onModal: (value: Modal) => void;
   onMessage: (key: TextKey, suffix?: string) => void;
   onImported: () => void;
   onDelete: (
@@ -47,7 +36,6 @@ export default function VaultDialogs({
   onBusy,
   onError,
   onClose,
-  onModal,
   onMessage,
   onImported,
   onDelete,
@@ -56,17 +44,6 @@ export default function VaultDialogs({
   const [current, setCurrent] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
-  async function exportBackup() {
-    onBusy(true);
-    try {
-      if (await run<boolean>("export_backup", { language }))
-        onMessage("backupSaved");
-    } catch (cause) {
-      onError(cause);
-    } finally {
-      onBusy(false);
-    }
-  }
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (modal === "master" && password !== confirm) {
@@ -114,15 +91,13 @@ export default function VaultDialogs({
       />
     );
   const title: TextKey =
-    modal === "settings"
-      ? "settingsTitle"
-      : modal === "master"
-        ? "changeMaster"
-        : modal === "import"
-          ? "importTitle"
-          : modal === "delete"
-            ? "deleteTitle"
-            : "unsavedTitle";
+    modal === "master"
+      ? "changeMaster"
+      : modal === "import"
+        ? "importTitle"
+        : modal === "delete"
+          ? "deleteTitle"
+          : "unsavedTitle";
   const errorContent = error && (
     <p className="form-error" role="alert">
       {error}
@@ -130,87 +105,6 @@ export default function VaultDialogs({
   );
   return (
     <Dialog title={t(title)} onClose={onClose} busy={busy}>
-      {modal === "settings" && (
-        <div className="settings-content">
-          <section>
-            <h3>
-              <ShieldCheck size={17} />
-              {t("privacyTitle")}
-            </h3>
-            <p>{t("privacyBody")}</p>
-            <dl className="settings-facts">
-              <div>
-                <dt>{t("autoLock")}</dt>
-                <dd>{t("autoLockValue")}</dd>
-              </div>
-              <div>
-                <dt>{t("clipboard")}</dt>
-                <dd>{t("clipboardValue")}</dd>
-              </div>
-            </dl>
-            <p className="field-help">{t("lockHidden")}</p>
-          </section>
-          <BrowserSettings t={t} run={run} onError={onError} />
-          <section>
-            <h3>{t("backups")}</h3>
-            <p>{t("backupBody")}</p>
-            <AutomaticBackups t={t} run={run} onError={onError} />
-            <div className="settings-buttons">
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => void exportBackup()}
-                disabled={busy}
-              >
-                <DownloadSimple size={16} />
-                {t("export")}
-              </button>
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => onModal("import")}
-                disabled={busy}
-              >
-                <UploadSimple size={16} />
-                {t("import")}
-              </button>
-            </div>
-            <p className="field-help">{t("restoreHint")}</p>
-          </section>
-          <button
-            type="button"
-            className="settings-link"
-            onClick={() => onModal("master")}
-            disabled={busy}
-          >
-            <Key size={17} />
-            <span>{t("changeMaster")}</span>
-            {language === "fa" ? (
-              <ArrowLeft size={15} />
-            ) : (
-              <ArrowRight size={15} />
-            )}
-          </button>
-          <details className="shortcut-details">
-            <summary>{t("shortcuts")}</summary>
-            {(
-              [
-                ["Ctrl N", "shortcutNew"],
-                ["Ctrl K", "shortcutSearch"],
-                ["Ctrl S", "shortcutSave"],
-                ["Ctrl Shift L", "shortcutLock"],
-              ] as const
-            ).map(([keys, label]) => (
-              <div key={keys}>
-                <span>{t(label)}</span>
-                <kbd>{keys}</kbd>
-              </div>
-            ))}
-          </details>
-          {errorContent}
-          <p className="early-note">{t("securityNote")}</p>
-        </div>
-      )}
       {(modal === "master" || modal === "import") && (
         <form onSubmit={submit} className="dialog-form">
           {modal === "master" ? (

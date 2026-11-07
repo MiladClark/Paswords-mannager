@@ -29,7 +29,7 @@ There is no trash command or soft-delete state. Permanent deletion checks an act
 
 The bundled webview has no generic filesystem, clipboard or opener plugin permissions. Narrow Rust commands validate records, website schemes, sizes and session state. Only `http` and `https` websites can be opened; embedded URL credentials are rejected. File pickers run in Rust, so frontend callers cannot provide arbitrary backup paths. A backup export refuses to overwrite an existing file.
 
-The production CSP blocks remote scripts, fonts, frames and connections. There are no remote icons, analytics, cloud APIs or embedded remote pages. Websites open only in the user's external browser after a user action. A single-instance plugin prevents competing PassWards instances. Window permissions permit dragging, minimize, maximize/restore and close for the integrated title bar. Browser integration adds narrow native commands; it does not give the webview a general IPC, registry or filesystem API.
+The production webview CSP blocks remote scripts, fonts, frames and connections. The optional cloud backup connection runs through specific native commands. Websites open in the external browser. A single-instance plugin prevents competing PassWards instances. Window permissions permit dragging, minimize, maximize/restore and close for the integrated title bar. Browser integration adds narrow native commands; it does not give the webview a general IPC, registry or filesystem API.
 
 ## Browser extension boundary
 
@@ -62,7 +62,7 @@ Copy operations are authorized again immediately before writing to the clipboard
 - Permanent deletion affects the current database only. Backups, filesystem snapshots, SSD wear leveling and external copies can retain previous ciphertext. Secure physical erasure is not promised.
 - Browser-pairing DPAPI assumes the current Windows user and OS are trusted. No PIN is supported and there is no password-reset/recovery backdoor. Forgetting the master password can make data unrecoverable.
 - Unlock and search are O(n) in record count, with decrypted search metadata held in Rust memory while open. There is no artificial record-count quota, and no infinite-capacity guarantee.
-- Distribution is a standalone unsigned EXE, with installer bundling disabled and no updater or telemetry. The extension remains unpacked. Dependency-audit automation is a development/CI tool, never an app network dependency. Independent penetration/cryptographic review is still pending.
+- Distribution includes a portable EXE and a per-user installer. The native updater accepts only newer releases, checks the installer signature against the pinned release key, and requires the signature to bind the claimed version. It uses the fixed DevTune feed and this repository’s Windows installer URL. Downloads and installation require approval; the vault is locked before the installer starts. Update requests contain no vault data. The webview retains its IPC-only network policy. Dependency auditing runs in development and CI. Independent penetration/cryptographic review is still pending.
 
 ## Validation scope
 
@@ -71,6 +71,21 @@ Core tests use temporary directories and fictional secrets; they include a 10,00
 ## Verified local snapshots
 
 Automatic snapshots are opt-in and default off. They contain the encrypted database only and are generated in a fixed app-data directory. Export reserves a new path without overwriting, uses SQLite backup, runs quick_check, compares the header and authenticates every record against the current session before reporting success. Failed outputs are removed. At most seven recognized regular snapshot files are pruned after successful backups; unrelated files and disabled backups are not deleted. The worker does not touch the idle timestamp. Local snapshots are not a replacement for an off-device backup and may retain permanently deleted records.
+
+Cloud backup is separately opt-in. The native app sends authenticated encrypted
+snapshots to private Vercel Blob with links scoped to an operation and file.
+It seals the SHA-256 digest of the complete snapshot with the vault key and a
+dedicated associated-data label. Restore authenticates the digest and records
+before writing to an empty vault in one transaction. DevTune receives the
+encrypted file and metadata, including its size and upload time. A stolen
+snapshot can be used to guess the historical master password offline.
+
+The DevTune account authorizes access to cloud snapshots. The app uses an
+external browser, a loopback callback bound to a random state and an S256
+challenge, and a cloud-only desktop token protected by Windows DPAPI. The
+cloud token is scoped to the account and never decrypts snapshots. Pausing
+automatic cloud backup or disconnecting a device leaves previous versions
+available to that account.
 
 ## Dependency review
 

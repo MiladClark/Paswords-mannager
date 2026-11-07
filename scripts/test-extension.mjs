@@ -170,6 +170,7 @@ try {
   const browserOptions = {
     channel,
     headless: true,
+    viewport: { width: 1280, height: 800 },
     reducedMotion: "reduce",
     env,
     ignoreDefaultArgs: channel === "chrome" ? ["--disable-extensions"] : [],

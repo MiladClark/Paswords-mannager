@@ -68,10 +68,10 @@ export default function BrowserSettings({
   }
   return (
     <section>
-      <h3>
+      <h2>
         <Globe size={17} />
         {t("browsers")}
-      </h3>
+      </h2>
       <p>{t("browserHelp")}</p>
       <ExtensionInstall t={t} />
       {!status?.available && status && (

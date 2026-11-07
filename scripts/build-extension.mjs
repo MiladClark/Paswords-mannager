@@ -3,13 +3,14 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const directory = path.join(root, "browser-extension");
+const { version } = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
 const identity = JSON.parse(
   await readFile(path.join(directory, "identity.json"), "utf8"),
 );
 const manifest = {
   manifest_version: 3,
   name: "PassWards",
-  version: "0.5.4",
+  version,
   description:
     "Save, update and fill logins with your offline PassWards vault. Desktop approval required.",
   key: identity.key,

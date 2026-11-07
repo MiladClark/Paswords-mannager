@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+import { createContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import "./startup.css";
+
+export const StartupReadyContext = createContext(true);
 
 /** A short brand introduction, independent of loading progress. */
 export function StartupShell({ children }: { children: ReactNode }) {
@@ -15,7 +17,7 @@ export function StartupShell({ children }: { children: ReactNode }) {
         className={visible ? "devtune-app devtune-entering" : "devtune-app"}
         inert={visible || undefined}
       >
-        {children}
+        <StartupReadyContext value={!visible}>{children}</StartupReadyContext>
       </div>
       {visible && (
         <div className="devtune-splash" aria-hidden="true">

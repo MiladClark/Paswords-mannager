@@ -250,7 +250,7 @@ async function load() {
       if (connectResult?.paired) {
         state = await send({ type: "state" });
       }
-    } catch (err) {
+    } catch {
       statusEl.textContent = "";
       updateConnectionPill("offline", t("offline"));
       const card = element("div", null, "state-card");

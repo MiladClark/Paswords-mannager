@@ -5,6 +5,7 @@ import AxeBuilder from "@axe-core/playwright";
 async function enter(page: Page, suffix = "") {
   await page.goto("/?preview=1" + suffix);
   await expect(page.locator(".devtune-splash")).toHaveCount(0);
+  await page.getByRole("button", { name: "Create a local vault", exact: true }).click();
   await page
     .getByLabel("Master password", { exact: true })
     .fill("A fictional test passphrase");
@@ -17,11 +18,34 @@ async function enter(page: Page, suffix = "") {
   ).toBeVisible();
 }
 
+test("master password setup has borderless back navigation and preserves its draft", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.goto("/?preview=1");
+  const create = page.getByRole("button", { name: "Create a local vault" });
+  await expect(page.getByRole("heading", { name: "Set up PassWards" })).toBeFocused();
+  await create.click();
+  await expect(page.getByRole("heading", { name: "Set your master password" })).toBeFocused();
+  await expect(page.locator(".auth-stage")).toHaveCSS("animation-name", "auth-step-enter");
+  const master = page.getByLabel("Master password", { exact: true });
+  await master.fill("A fictional test passphrase");
+  await expect(page.locator('input[type="email"]')).toHaveCount(0);
+  const back = page.getByRole("button", { name: "Back to setup" });
+  await expect(back).toHaveCSS("border-bottom-width", "0px");
+  await expect(back).toHaveCSS("border-top-width", "0px");
+  await back.click();
+  await expect(page.getByRole("heading", { name: "Set up PassWards" })).toBeFocused();
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await create.click();
+  await expect(page.locator(".auth-stage")).toHaveCSS("animation-name", "none");
+  await expect(master).toHaveValue("A fictional test passphrase");
+});
+
 test("create form catches mismatch; locking removes visible vault state", async ({
   page,
 }) => {
   await page.goto("/?preview=1");
   await expect(page.locator(".devtune-splash")).toHaveCount(0);
+  await page.getByRole("button", { name: "Create a local vault", exact: true }).click();
   await page
     .getByLabel("Master password", { exact: true })
     .fill("A fictional test passphrase");
@@ -226,9 +250,12 @@ test("unsaved edits need an explicit discard; keyboard save works", async ({
     page.getByRole("button", { name: "Save item", exact: true }),
   ).toHaveCount(0);
   await page.getByRole("button", { name: "Settings", exact: true }).click();
-  await expect(page.getByRole("dialog")).toBeVisible();
-  await page.keyboard.press("Escape");
+  await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeFocused();
   await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "New item", exact: true })).toHaveCount(0);
+  await page.keyboard.press("Control+n");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("heading", { name: "Unsaved fixture", exact: true })).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Settings", exact: true }),
   ).toBeFocused();
@@ -237,16 +264,16 @@ test("unsaved edits need an explicit discard; keyboard save works", async ({
 for (const colorScheme of ["dark", "light"] as const) {
   test(`English layout and accessibility at desktop and narrow widths: ${colorScheme}`, async ({
     page,
+    baseURL,
   }, testInfo) => {
     await page.emulateMedia({ colorScheme });
     const errors: string[] = [];
     const requests: string[] = [];
+    const origin = new URL(baseURL!).origin;
+    const ownOrigins = [origin, origin.replace(/^http/, "ws")];
     page.on("pageerror", (error) => errors.push(error.message));
     page.on("request", (request) => {
-      if (
-        !request.url().startsWith("http://127.0.0.1:1420") &&
-        !request.url().startsWith("ws://127.0.0.1:1420")
-      )
+      if (!ownOrigins.includes(new URL(request.url()).origin))
         requests.push(request.url());
     });
     await enter(page);
@@ -373,13 +400,34 @@ test("Persian stays disabled even with a saved preference, and no PIN UI remains
   await backup.check();
   await expect(backup).toBeChecked();
   await backup.uncheck();
-  await page.getByRole("button", { name: "Close", exact: true }).click();
+  await page.getByRole("button", { name: "Back to vault", exact: true }).click();
   await page.getByRole("button", { name: "Lock vault", exact: true }).click();
   await expect(page.getByLabel("PIN", { exact: true })).toHaveCount(0);
   await expect(
     page.getByLabel("Master password", { exact: true }),
   ).toBeVisible();
   await expect(page.locator(".password-value")).toHaveCount(0);
+});
+
+test("signing out returns to setup and a newly created vault contains no old items", async ({ page }) => {
+  await enter(page);
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Type «موافقم» to continue").fill("موافقم");
+  await dialog.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect(dialog.getByLabel("Master password", { exact: true })).toBeFocused();
+  await dialog.getByLabel("Master password", { exact: true }).fill("A fictional test passphrase");
+  await dialog.getByRole("button", { name: "Erase data and sign out" }).click();
+  await expect(page.getByRole("heading", { name: "Set up PassWards" })).toBeVisible();
+  await page.getByRole("button", { name: "Create a local vault", exact: true }).click();
+  const fresh = "A different fictional passphrase";
+  await page.getByLabel("Master password", { exact: true }).fill(fresh);
+  await page.getByLabel("Confirm master password", { exact: true }).fill(fresh);
+  await page.getByRole("button", { name: "Create vault", exact: true }).click();
+  await expect(page.getByRole("button", { name: "New item", exact: true })).toBeVisible();
+  await expect(page.getByText("Personal email", { exact: true })).toHaveCount(0);
+  await expect(page.locator(".entry-row")).toHaveCount(0);
 });
 
 test("filter menus support keyboard selection, dismissal and narrow layouts", async ({
@@ -443,6 +491,8 @@ test("motion animates dialog exits without delaying a security lock", async ({
   await page.emulateMedia({ reducedMotion: "no-preference" });
   await enter(page);
   await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const changeMaster = page.getByRole("button", { name: "Change master password", exact: true });
+  await changeMaster.click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
   expect(
@@ -456,10 +506,8 @@ test("motion animates dialog exits without delaying a security lock", async ({
     "",
   );
   await expect(page.locator("dialog")).toHaveCount(0);
-  await expect(
-    page.getByRole("button", { name: "Settings", exact: true }),
-  ).toBeFocused();
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await expect(changeMaster).toBeFocused();
+  await changeMaster.click();
   await expect(dialog).toBeVisible();
   await page.keyboard.press("Control+Shift+L");
   await expect(
@@ -588,12 +636,14 @@ test("declining a browser save does not add an account", async ({ page }) => {
 
 test("saved site icons render locally with fallbacks for missing or invalid images", async ({
   page,
+  baseURL,
 }) => {
   const remote: string[] = [];
+  const origin = new URL(baseURL!).origin;
+  const ownOrigins = [origin, origin.replace(/^http/, "ws")];
   page.on("request", (request) => {
     if (
-      !request.url().startsWith("http://127.0.0.1:1420") &&
-      !request.url().startsWith("ws://127.0.0.1:1420") &&
+      !ownOrigins.includes(new URL(request.url()).origin) &&
       !request.url().startsWith("data:")
     )
       remote.push(request.url());

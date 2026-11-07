@@ -2,6 +2,7 @@
 import {
   blankEntry,
   DELETE_CONFIRMATION,
+  RESET_CONFIRMATION,
   type Entry,
   type EntryView,
   type Page,
@@ -181,6 +182,20 @@ export async function request(
   }
   if (command === "lock_vault") {
     unlocked = false;
+    return;
+  }
+  if (command === "reset_local") {
+    if (!unlocked) throw "locked";
+    if (String(args.confirmation).trim() !== RESET_CONFIRMATION)
+      throw "resetConfirmationInvalid";
+    checkMaster(args.master);
+    entries = [];
+    master = "";
+    exists = false;
+    unlocked = false;
+    automaticBackups = false;
+    browserHandled = true;
+    browserSaveHandled = true;
     return;
   }
   if (!unlocked) throw "locked";

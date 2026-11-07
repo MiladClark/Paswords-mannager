@@ -18,14 +18,24 @@ impl Browser {
             Self::Brave => "brave://extensions",
         }
     }
-    pub fn installed(&self) -> bool {
+    pub fn executable(&self) -> Option<PathBuf> {
         let relative = match self {
             Self::Chrome => "Google/Chrome/Application/chrome.exe",
             Self::Edge => "Microsoft/Edge/Application/msedge.exe",
             Self::Brave => "BraveSoftware/Brave-Browser/Application/brave.exe",
         };
         ["PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA"].iter()
-            .filter_map(std::env::var_os).any(|root| PathBuf::from(root).join(relative).is_file())
+            .filter_map(std::env::var_os)
+            .map(|root| PathBuf::from(root).join(relative))
+            .find(|path| path.is_file())
+    }
+
+    pub fn store_url(&self) -> Option<String> {
+        if !matches!(self, Self::Edge) {
+            return None;
+        }
+        let id = super::extension_identity().store_id()?;
+        Some(format!("https://microsoftedge.microsoft.com/addons/detail/passwards/{id}"))
     }
 }
 

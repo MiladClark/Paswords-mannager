@@ -8,8 +8,11 @@ use chacha20poly1305::{
 use rand::{Rng, RngCore, rngs::OsRng, seq::SliceRandom};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeMap,
+    fs::{File, OpenOptions},
+    io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -21,6 +24,17 @@ const FORMAT: u32 = 1;
 const MEMORY_KIB: u32 = 65_536;
 const ITERATIONS: u32 = 3;
 const IDLE_SECONDS: u64 = 300;
+const CLOUD_AAD: &[u8] = b"passwards:cloud-snapshot:v1:sha256";
+const CLOUD_MAGIC: &[u8; 8] = b"PWCLD001";
+const CLOUD_TRAILER: u64 = 80;
+const RESET_CONFIRMATION: &str = "موافقم";
+
+fn snapshot_digest(file: &mut File) -> Result<[u8; 32]> {
+    file.rewind().map_err(|_| "storageError")?;
+    let mut hash = Sha256::new();
+    std::io::copy(file, &mut hash).map_err(|_| "storageError")?;
+    Ok(hash.finalize().into())
+}
 
 fn db_error(_: rusqlite::Error) -> String {
     "storageError".into()
@@ -687,6 +701,30 @@ impl Vault {
         self.backups.dirty = true;
         Ok(())
     }
+    pub(crate) fn reset_local(
+        &mut self,
+        confirmation: &str,
+        master: &str,
+        cleanup: impl FnOnce(&Path) -> Result<()>,
+    ) -> Result<()> {
+        self.touch()?;
+        if confirmation.trim() != RESET_CONFIRMATION {
+            return Err("resetConfirmationInvalid".into());
+        }
+        self.master_key(master)?;
+        let directory = self.path.parent().ok_or("resetCleanupFailed")?;
+        let cleanup_result = cleanup(directory);
+        self.backups = crate::backups::Backups::open(&self.path);
+        cleanup_result?;
+        // secure_delete is enabled on this connection. Wipe the wrapped key and
+        // every record in one transaction, so an interrupted commit keeps the vault intact.
+        let tx = self.conn.transaction().map_err(db_error)?;
+        tx.execute_batch("DELETE FROM entries; DELETE FROM meta;").map_err(db_error)?;
+        tx.commit().map_err(db_error)?;
+        self.lock();
+        self.legacy_pin_retired = false;
+        Ok(())
+    }
     pub fn change_password(&mut self, current: &str, new: &str) -> Result<()> {
         self.touch()?;
         if new != current { valid_password(new)?; }
@@ -741,6 +779,59 @@ impl Vault {
     pub fn backup(&mut self, path: &Path) -> Result<()> {
         self.touch()?;
         self.verified_backup(path)
+    }
+    pub(crate) fn cloud_revision(&self) -> Option<u64> {
+        self.session.as_ref().map(|_| self.conn.total_changes())
+    }
+    pub(crate) fn cloud_snapshot(&mut self, path: &Path) -> Result<u64> {
+        self.expire();
+        let revision = self.cloud_revision().ok_or("locked")?;
+        self.verified_backup(path)?;
+        let mut file = OpenOptions::new().read(true).append(true).open(path).map_err(|_| "storageError")?;
+        let digest = snapshot_digest(&mut file)?;
+        let key = &self.session.as_ref().ok_or("locked")?.key;
+        let trailer = seal(key, &digest, CLOUD_AAD)?;
+        file.write_all(&trailer).and_then(|_| file.write_all(CLOUD_MAGIC)).map_err(|_| "storageError")?;
+        Ok(revision)
+    }
+    pub(crate) fn restore_cloud_snapshot(&mut self, path: &Path, password: &str) -> Result<()> {
+        if self.header()?.is_some() {
+            return Err("vaultExists".into());
+        }
+        let mut file = OpenOptions::new().read(true).write(true).open(path).map_err(|_| "storageError")?;
+        let size = file.metadata().map_err(|_| "storageError")?.len();
+        let snapshot_size = size.checked_sub(CLOUD_TRAILER).filter(|len| *len >= 512).ok_or("backupValidationFailed")?;
+        let mut trailer = [0u8; CLOUD_TRAILER as usize];
+        file.seek(SeekFrom::Start(snapshot_size)).and_then(|_| file.read_exact(&mut trailer)).map_err(|_| "backupValidationFailed")?;
+        if &trailer[72..] != CLOUD_MAGIC {
+            return Err("backupValidationFailed".into());
+        }
+        file.set_len(snapshot_size).map_err(|_| "storageError")?;
+        let digest = snapshot_digest(&mut file)?;
+        drop(file);
+
+        let mut source = Self::readonly(path)?;
+        let (header, key) = source.master_key(password)?;
+        let authenticated = unseal(&key, &trailer[..72], CLOUD_AAD).map_err(|_| "backupValidationFailed")?;
+        if authenticated.as_slice() != digest {
+            return Err("backupValidationFailed".into());
+        }
+        source.load_session(header, key)?;
+        let integrity: String = source.conn.query_row("PRAGMA quick_check", [], |row| row.get(0)).map_err(db_error)?;
+        if integrity != "ok" {
+            return Err("backupValidationFailed".into());
+        }
+        let header: String = source.conn.query_row("SELECT header FROM meta WHERE id=1", [], |row| row.get(0)).map_err(db_error)?;
+        let mut entries = source.conn.prepare("SELECT id, sealed FROM entries").map_err(db_error)?;
+        let mut rows = entries.query([]).map_err(db_error)?;
+        let tx = self.conn.transaction().map_err(db_error)?;
+        tx.execute("INSERT INTO meta(id, header) VALUES (1, ?1)", [header]).map_err(db_error)?;
+        while let Some(row) = rows.next().map_err(db_error)? {
+            tx.execute("INSERT INTO entries(id, sealed) VALUES (?1, ?2)", params![row.get::<_, String>(0).map_err(db_error)?, row.get::<_, Vec<u8>>(1).map_err(db_error)?]).map_err(db_error)?;
+        }
+        tx.commit().map_err(db_error)?;
+        self.backups.dirty = true;
+        Ok(())
     }
     fn verified_backup(&self, path: &Path) -> Result<()> {
         if path == self.path || path.exists() {
@@ -956,6 +1047,40 @@ mod tests {
         let mut reopened = Vault::open(path).unwrap();
         reopened.unlock("new long master passphrase").unwrap();
         assert_eq!(reopened.get(&saved.id).unwrap().title, "Private account");
+    }
+    #[test]
+    fn cloud_restore_authenticates_whole_snapshot_and_only_fills_an_empty_vault() {
+        let temp = tempfile::tempdir().unwrap();
+        let master = "fictional cloud restore passphrase";
+        let mut original = Vault::open(temp.path().join("original.sqlite")).unwrap();
+        original.create(master).unwrap();
+        let saved = original.save(entry("Cloud recovery test")).unwrap();
+        let snapshot = temp.path().join("backup.pwcloud");
+        original.cloud_snapshot(&snapshot).unwrap();
+
+        let tampered = temp.path().join("tampered.pwcloud");
+        let mut bytes = std::fs::read(&snapshot).unwrap();
+        let trailer = bytes.split_off(bytes.len() - CLOUD_TRAILER as usize);
+        std::fs::write(&tampered, &bytes).unwrap();
+        {
+            let db = Connection::open(&tampered).unwrap();
+            db.execute("DELETE FROM entries", []).unwrap();
+        }
+        OpenOptions::new().append(true).open(&tampered).unwrap().write_all(&trailer).unwrap();
+        let mut restored = Vault::open(temp.path().join("restored.sqlite")).unwrap();
+        assert_eq!(restored.restore_cloud_snapshot(&tampered, master).unwrap_err(), "backupValidationFailed");
+        assert!(!restored.status().unwrap().exists);
+
+        let wrong = temp.path().join("wrong.pwcloud");
+        std::fs::copy(&snapshot, &wrong).unwrap();
+        assert_eq!(restored.restore_cloud_snapshot(&wrong, "incorrect password").unwrap_err(), "invalidPassword");
+        assert!(!restored.status().unwrap().exists);
+
+        restored.restore_cloud_snapshot(&snapshot, master).unwrap();
+        assert!(!restored.status().unwrap().unlocked);
+        restored.unlock(master).unwrap();
+        assert_eq!(restored.get(&saved.id).unwrap().password, saved.password);
+        assert_eq!(restored.restore_cloud_snapshot(&snapshot, master).unwrap_err(), "vaultExists");
     }
     #[test]
     fn favicons_are_bounded_local_pngs_and_survive_encrypted_backups() {

@@ -31,7 +31,7 @@ fn main() {
         .nth(1)
         .filter(|s| s.starts_with("chrome-extension://"))
     {
-        if caller != browser::extension_origin() {
+        if !browser::extension_origin_allowed(&caller) {
             return;
         }
         let mut input = std::io::stdin().lock();

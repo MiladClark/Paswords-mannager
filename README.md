@@ -12,7 +12,11 @@ A small, offline desktop password vault. English-only for this release; Persian 
 
 ## Use the app
 
-Download the Windows x64 EXE from [GitHub Releases](https://github.com/MiladClark/Paswords-mannager/releases/latest), or extract the portable ZIP and open `PassWards.exe`. There is no installer or automatic updater. The app embeds its frontend and browser extension; use Settings → Browsers to prepare the extension and pair Chrome or Edge. Rust, Node and C++ Build Tools are development requirements only. Windows 10/11 x64 and Microsoft Edge WebView2 Runtime are required to run the app.
+Download PassWards for Windows x64 from [DevTune](https://devtune.app/download/passwards). Choose the installer to get in-app updates, or run the portable EXE directly. Both use the same local vault. The app embeds its frontend and browser extension; use Settings → Browsers to prepare the extension and pair Chrome or Edge. Windows 10/11 x64 and Microsoft Edge WebView2 Runtime are required.
+
+PassWards checks on startup and in **Settings → Updates**. The installed build can download a signed update after you approve it. Choose **Install & restart** when you are ready; PassWards locks the vault before closing. Portable builds open the download page for manual replacement.
+
+For maintainers: before cutting the first release with an installer, generate a dedicated Tauri updater key pair with `pnpm tauri signer generate --write-keys <private-key-path>`. Keep a secure copy of the private key. Add the public key as the GitHub Actions repository variable `PASSWARDS_UPDATE_PUBKEY`, and set the repository secrets `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Keep this same key pair for subsequent releases so installed copies can verify updates. A matching `vX.Y.Z` tag builds both distributions and publishes the installer, signed update manifest, portable files and checksums together. DevTune picks up the latest stable release automatically.
 
 1. Create a vault with a unique master passphrase of at least 12 characters. There is no password reset or recovery backdoor.
 2. Add an item with a name, username/email, password, website, folder, tags and notes. Additional fields can be visible or hidden.
@@ -34,6 +38,19 @@ On a successful master unlock, a legacy device-PIN file or recognized interrupte
 
 Automatic backups are **off by default**. Settings can enable verified encrypted snapshots in the app-data automatic-backups/ directory. On changes, up to seven recent snapshots are kept, at most every 15 minutes while unlocked; enabling it creates one immediately. Verification authenticates every record and checks SQLite integrity. Backup work never refreshes the inactivity timer. Old snapshots may retain deleted items; local backups do not protect against loss of the whole device. Disabling automatic snapshots leaves existing ones intact. Use Import backup to recover a snapshot with the master password that applied when it was created.
 
+**Cloud Backup** is optional. During setup, choose **Sign in or sign up with
+DevTune** to continue in your browser, then set a master password for a new
+vault or choose an existing backup. **Create a local vault** skips account setup.
+Settings → Backups offers **Back up now** and
+automatic uploads after saved changes. PassWards retries an interrupted
+automatic upload while it is running. Check the last successful upload to
+see when this device's data reached DevTune.
+
+To restore on a fresh installation, sign in to the same DevTune account from
+the setup page and choose one of its seven most recent backups. Use the master
+password that applied when the backup was made. Restoring verifies the file
+before writing the vault, then leaves the vault locked.
+
 Keyboard shortcuts: `Ctrl N` new item, `Ctrl K` search, `Ctrl S` save edits, `Ctrl Shift L` lock. Every shortcut also has a visible control.
 
 There is no artificial item-count limit. Available storage, memory and hardware set the practical limit. Lists return 50 items per page; names and other search metadata are indexed in Rust memory while unlocked. Unlocking authenticates and indexes every record, and search scans that in-memory index. The core tests exercise a 10,000-item vault; this is not a claim of infinite scale.
@@ -42,7 +59,7 @@ The live database is in the per-user Tauri application-data directory, normally 
 
 ## Chrome, Edge and Brave
 
-Version 0.3 includes the Manifest V3 extension in `browser-extension/`. Load that folder with Developer mode → Load unpacked in `chrome://extensions`, `edge://extensions` or `brave://extensions`. It is not published to an extension store yet.
+Version 0.3 includes the Manifest V3 extension in `browser-extension/`. In a build with the Edge Add-ons listing configured, choose **Settings → Browsers → Edge** to open the store and install it. To test the bundled development extension, use Developer mode → Load unpacked in `chrome://extensions`, `edge://extensions` or `brave://extensions`.
 
 Open PassWards, then Settings → Browsers to prepare the extension. Opening the extension popup automatically connects that browser profile without a manual code. Filling and saving still require desktop approval. If you move the executable, use Repair connection in that copy of the app.
 
@@ -82,6 +99,8 @@ UI tests launch an isolated headless Microsoft Edge context with fictional data.
 Extension integration tests launch a fresh Edge or Chrome profile and register a separate temporary `com.passward.fixture` native host. The test-only Rust example uses a temporary fictional vault and a private test pipe; no real vault is opened. The same suite can exercise the release binary's real native-host path by setting `PASSWARD_NATIVE_EXE` to its absolute path. It acquires exclusive ownership of the standard pipe first and fails if a running PassWards 0.3 instance already owns it. Test host registry entries and the isolated profile are removed afterward.
 
 The output is a standalone Windows executable. Run `pnpm package:release` after building to prepare the versioned EXE, portable ZIP and SHA-256 checksums under `release/`. No installer, automatic update client, cloud sync or telemetry is included. The executable is currently unsigned. Development dependency audits run separately from the offline app: `scripts/check-security.ps1` (requires pnpm, Cargo and cargo-audit); CI runs the same checks on pushes and pull requests.
+
+Run `pnpm package:extension` to prepare the Microsoft Edge Add-ons upload ZIP. See the [store release guide](docs/edge-addons.md) for enabling the store install in the desktop app.
 
 See [SECURITY.md](SECURITY.md) for the security model and its limits, and [ROADMAP.md](ROADMAP.md) for the browser-extension and product development plan.
 

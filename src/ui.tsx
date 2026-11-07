@@ -4,17 +4,9 @@ import {
   useId,
   useRef,
   useState,
-  type FormEvent,
   type ReactNode,
 } from "react";
-import {
-  CircleNotch,
-  Eye,
-  EyeSlash,
-  LockSimple,
-  ShieldCheck,
-  X,
-} from "@phosphor-icons/react";
+import { Eye, EyeSlash, X } from "@phosphor-icons/react";
 import type { Key } from "./i18n";
 import { ExitingContext } from "./MotionPresence";
 export type Translate = (key: Key) => string;
@@ -96,6 +88,8 @@ export function SecretInput({
   t,
   autoFocus = false,
   minLength,
+  disabled = false,
+  hint,
 }: {
   id: string;
   label: string;
@@ -104,6 +98,8 @@ export function SecretInput({
   t: Translate;
   autoFocus?: boolean;
   minLength?: number;
+  disabled?: boolean;
+  hint?: string;
 }) {
   const [visible, setVisible] = useState(false);
   return (
@@ -123,93 +119,50 @@ export function SecretInput({
           spellCheck={false}
           dir="ltr"
           autoFocus={autoFocus}
+          disabled={disabled}
+          aria-describedby={hint ? `${id}-hint` : undefined}
         />
         <IconButton
           label={t(visible ? "hide" : "show")}
+          disabled={disabled}
           onClick={() => setVisible((v) => !v)}
         >
           {visible ? <EyeSlash /> : <Eye />}
         </IconButton>
       </div>
+      {hint && (
+        <p id={`${id}-hint`} className="field-help">
+          {hint}
+        </p>
+      )}
     </div>
   );
 }
-export function Auth({
-  exists,
-  onUnlock,
-  t,
-  error,
-  busy,
-  extensionInstall,
+export function CloudSwitch({
+  checked,
+  disabled,
+  label,
+  onChange,
 }: {
-  exists: boolean;
-  onUnlock: (password: string) => void;
-  t: Translate;
-  error: string;
-  busy: boolean;
-  extensionInstall?: ReactNode;
+  checked: boolean;
+  disabled?: boolean;
+  label: string;
+  onChange: (checked: boolean) => void;
 }) {
-  const [password, setPassword] = useState("");
-  const [confirm, setConfirm] = useState("");
-  const [mismatch, setMismatch] = useState(false);
-  function submit(e: FormEvent) {
-    e.preventDefault();
-    if (!exists && password !== confirm) {
-      setMismatch(true);
-      return;
-    }
-    setMismatch(false);
-    onUnlock(password);
-  }
   return (
-    <main className="auth-page">
-      <section className="auth-content">
-        <h1>{t(exists ? "unlockTitle" : "createTitle")}</h1>
-        <form onSubmit={submit} className="auth-form">
-          <SecretInput
-            id="master-password"
-            label={t("master")}
-            value={password}
-            onChange={setPassword}
-            t={t}
-            minLength={exists ? undefined : 12}
-            autoFocus
-          />
-          {!exists && (
-            <>
-              <p className="field-help">{t("masterHint")}</p>
-              <SecretInput
-                id="confirm-password"
-                label={t("confirm")}
-                value={confirm}
-                onChange={setConfirm}
-                t={t}
-                minLength={12}
-              />
-            </>
-          )}
-          {(error || mismatch) && (
-            <p className="form-error" role="alert">
-              {mismatch ? t("mismatch") : error}
-            </p>
-          )}
-          <button type="submit" className="primary auth-submit" disabled={busy}>
-            {busy ? <CircleNotch className="spin" /> : <LockSimple />}
-            {t(busy ? "working" : exists ? "unlock" : "create")}
-          </button>
-        </form>
-        <div className="auth-reassurance">
-          <ShieldCheck size={15} />
-          <span>{t("encrypted")}</span>
-          <span className="small-dot" />
-          <span>{t("offline")}</span>
-        </div>
-      </section>
-      {extensionInstall}
-      <p className="early-note">{t("securityNote")}</p>
-    </main>
+    <label className="cloud-switch">
+      <input
+        type="checkbox"
+        role="switch"
+        checked={checked}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.checked)}
+      />
+      <span>{label}</span>
+    </label>
   );
 }
+
 export function hostname(url: string) {
   try {
     return new URL(url).hostname.replace(/^www\./, "");

@@ -11,6 +11,8 @@ jobs:
   windows:
     runs-on: windows-latest
     timeout-minutes: 45
+    env:
+      PASSWARDS_UPDATE_PUBKEY: ${{ vars.PASSWARDS_UPDATE_PUBKEY }}
     defaults:
       run:
         shell: pwsh
@@ -30,12 +32,24 @@ jobs:
           pnpm install --frozen-lockfile
       - name: Select stable Rust
         run: rustup default stable
+      - name: Prepare signed release configuration
+        run: node scripts/prepare-updater.mjs config (Join-Path $env:RUNNER_TEMP 'passwards.release.json')
       - name: Run vault regressions
         run: cargo test --release --manifest-path src-tauri/Cargo.toml --lib --locked --no-default-features
       - name: Build standalone EXE
         run: pnpm build:app
       - name: Package portable downloads
         run: pnpm package:release
+      - name: Build signed per-user installer
+        env:
+          PASSWARDS_INSTALLER_BUILD: '1'
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if (!$env:TAURI_SIGNING_PRIVATE_KEY) { throw 'Missing TAURI_SIGNING_PRIVATE_KEY repository secret' }
+          pnpm tauri build --bundles nsis --config (Join-Path $env:RUNNER_TEMP 'passwards.release.json')
+      - name: Prepare stable update manifest
+        run: node scripts/prepare-updater.mjs manifest
       - name: Publish verified release assets
         env:
           GH_TOKEN: ${{ github.token }}
@@ -55,6 +69,6 @@ jobs:
             gh release create $taskTag --repo $env:GITHUB_REPOSITORY --verify-tag --draft --title "PassWards $taskTag" --notes-file $taskNotes
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
-          gh release upload $taskTag "release/$taskBase.exe" "release/$taskBase.zip" 'release/SHA256SUMS.txt' --repo $env:GITHUB_REPOSITORY --clobber
+          gh release upload $taskTag "release/$taskBase.exe" "release/$taskBase.zip" "release/$taskBase-setup.exe" 'release/latest.json' 'release/SHA256SUMS.txt' --repo $env:GITHUB_REPOSITORY --clobber
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           gh release edit $taskTag --repo $env:GITHUB_REPOSITORY --draft=false --latest

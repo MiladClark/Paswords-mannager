@@ -7,7 +7,8 @@ import { Dialog, type Translate } from "./ui";
 
 type Browser = "chrome" | "edge" | "brave";
 type Prepared = {
-  directory: string;
+  directory?: string;
+  store?: boolean;
   browserInstalled: boolean;
   preview: boolean;
 };
@@ -96,7 +97,18 @@ export default function ExtensionInstall({ t }: { t: Translate }) {
           >
             <div className="dialog-form extension-setup">
               {working && <p role="status">{t("extensionPreparing")}</p>}
-              {prepared && (
+              {prepared?.store &&
+                (prepared.browserInstalled ? (
+                  <>
+                    <p role="status">{t("extensionStoreOpened")}</p>
+                    <p className="field-help">{t("extensionStoreConnect")}</p>
+                  </>
+                ) : (
+                  <p className="form-error" role="alert">
+                    {t("extensionStoreBrowserMissing")}
+                  </p>
+                ))}
+              {prepared && !prepared.store && (
                 <>
                   <p>
                     {t(
@@ -164,7 +176,7 @@ export default function ExtensionInstall({ t }: { t: Translate }) {
                     {t("extensionRetry")}
                   </button>
                 )}
-                {prepared && (
+                {prepared && !prepared.store && (
                   <button
                     type="button"
                     className="secondary"

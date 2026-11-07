@@ -1,6 +1,6 @@
 [package]
 name = "passward"
-version = "0.3.2"
+version = "1.0.0"
 description = "A small, local encrypted password vault"
 authors = ["Parag"]
 edition = "2024"
@@ -25,9 +25,9 @@ serde_json = "1"
 argon2 = { version = "0.5.3", features = ["zeroize"] }
 chacha20poly1305 = "0.10.1"
 rand = "0.8.5"
-zeroize = { version = "1", features = ["derive"] }
+zeroize = { version = "1", features = ["derive", "serde"] }
 rusqlite = { version = "0.37", features = ["bundled", "backup"] }
-uuid = { version = "1", features = ["v4"] }
+uuid = { version = "1", features = ["v4", "serde"] }
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-single-instance = "2"
@@ -36,13 +36,13 @@ arboard = { version = "3.7", default-features = false }
 sha2 = "0.10"
 subtle = "2"
 base64 = "0.23"
-tokio = { version = "1", features = ["net", "io-util", "time", "rt", "sync"] }
+tokio = { version = "1", features = ["net", "io-util", "time", "rt", "sync", "macros"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["blocking", "json", "native-tls"] }
+tempfile = "3"
+tauri-plugin-updater = "2"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Cryptography", "Win32_Security_Authorization", "Win32_System_Threading", "Win32_System_Memory", "Win32_System_RemoteDesktop", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
-
-[dev-dependencies]
-tempfile = "3"
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

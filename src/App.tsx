@@ -38,16 +38,21 @@ import {
   editable,
 } from "./api";
 import { en, translator, type Key as TextKey, type Language } from "./i18n";
-import { Auth, hostname, IconButton, SiteIcon } from "./ui";
+import { hostname, IconButton, SiteIcon } from "./ui";
+import Auth from "./Auth";
 import EntryForm from "./EntryForm";
 import EntryDetail from "./EntryDetail";
 import VaultDialogs, { type Modal } from "./VaultDialogs";
+import SettingsPage from "./SettingsPage";
+import ResetDialog from "./ResetDialog";
 import WindowControls from "./WindowControls";
 import BrowserFillDialog, { type BrowserFill } from "./BrowserFillDialog";
 import ExtensionInstall from "./ExtensionInstall";
 import BrowserSaveDialog, { type BrowserSave } from "./BrowserSaveDialog";
 import Dropdown from "./Dropdown";
 import MotionPresence from "./MotionPresence";
+import UpdateWidget from "./UpdateWidget";
+import { useAppUpdates } from "./updates";
 import "./App.css";
 
 const emptyPage: Page = {
@@ -68,6 +73,7 @@ function initialLanguage(): Language {
   }
 }
 export default function App() {
+  const updates = useAppUpdates();
   const [theme, setTheme] = useState<"light" | "dark">(() => {
     try {
       const saved = localStorage.getItem("passward.theme");
@@ -86,6 +92,7 @@ export default function App() {
   >("loading");
   const [exists, setExists] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
   const [page, setPage] = useState<Page>(emptyPage);
@@ -112,7 +119,10 @@ export default function App() {
   draftRef.current = draft;
   const [baseline, setBaseline] = useState("");
   const [reveal, setReveal] = useState(false);
-  const [modal, setModal] = useState<Modal | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const settingsButton = useRef<HTMLButtonElement>(null);
+  const restoreSettingsFocus = useRef(false);
+  const [modal, setModal] = useState<Modal | "reset" | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const editorForm = useRef<HTMLFormElement>(null);
   const epoch = useRef(0);
@@ -142,7 +152,6 @@ export default function App() {
     selectedRef.current = null;
     openRef.current = false;
     setPhase("locked");
-    setExists(true);
     setEntry(null);
     setDraft(null);
     setBaseline("");
@@ -150,6 +159,8 @@ export default function App() {
     setPage(emptyPage);
     setReveal(false);
     setRevealRequest(null);
+    setShowSettings(false);
+    restoreSettingsFocus.current = false;
     setModal(null);
     setQuery("");
     setDebounced("");
@@ -228,7 +239,7 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [entry?.id, entry?.protected, entry?.grantExpiresAt, draft]);
   useEffect(() => {
-    if (phase !== "open" || modal || draft || busy) return;
+    if (phase !== "open" || showSettings || modal || draft || busy) return;
     let active = true;
     const poll = () =>
       void Promise.all([
@@ -250,7 +261,7 @@ export default function App() {
       active = false;
       clearInterval(timer);
     };
-  }, [phase, modal, !!draft, busy, browserFill?.id, browserSave?.id, fail]);
+  }, [phase, showSettings, modal, !!draft, busy, browserFill?.id, browserSave?.id, fail]);
   async function decideBrowserSave(
     allow: boolean,
     secret: string,
@@ -415,7 +426,10 @@ export default function App() {
       if (e.key.toLowerCase() === "l" && e.shiftKey) {
         e.preventDefault();
         void lock();
-      } else if (
+        return;
+      }
+      if (showSettings) return;
+      if (
         e.key.toLowerCase() === "s" &&
         draftRef.current &&
         !modal &&
@@ -461,6 +475,24 @@ export default function App() {
       setModal("discard");
     } else action();
   }
+  useLayoutEffect(() => {
+    if (!showSettings && restoreSettingsFocus.current) {
+      restoreSettingsFocus.current = false;
+      settingsButton.current?.focus();
+    }
+  }, [showSettings]);
+  function closeSettings() {
+    restoreSettingsFocus.current = true;
+    setShowSettings(false);
+    setError("");
+  }
+  function quit() {
+    if (native)
+      guard(() => {
+        allowClose.current = true;
+        void getCurrentWindow().close().catch(fail);
+      });
+  }
   function startNew() {
     guard(() => {
       const next = blankEntry();
@@ -470,14 +502,26 @@ export default function App() {
       setError("");
     });
   }
-  async function authenticate(password: string) {
+  async function authenticate(password: string, enableCloud: boolean) {
     setBusy(true);
     setError("");
     try {
       await request(exists ? "unlock_vault" : "create_vault", { password });
+      let cloudError: unknown;
+      if (!exists && enableCloud && native) {
+        try {
+          await request("cloud_enable", { enabled: true });
+        } catch (cause) {
+          cloudError = cause;
+        }
+      }
       const status = await request<Status>("vault_status");
       setExists(true);
-      setPhase("open");
+      setPhase(status.unlocked ? "open" : "locked");
+      if (cloudError) {
+        fail(cloudError);
+        if (status.unlocked) setShowSettings(true);
+      }
       reload();
       if (status.legacyPinRetired) message("legacyPinRetired");
     } catch (cause) {
@@ -492,6 +536,31 @@ export default function App() {
       await call("lock_vault");
     } catch {
       setError(tRef.current("genericError"));
+    }
+  }
+  async function resetLocal(confirmation: string, master: string) {
+    if (busy || resetting) return;
+    setBusy(true);
+    setResetting(true);
+    setError("");
+    try {
+      // A native lock event can arrive while the reset is finishing.
+      // Apply the successful reset even if that event has already cleared the vault view.
+      await call("reset_local", { confirmation, master });
+      clearSensitive();
+      setExists(false);
+      setSort("recent");
+      setTheme(matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      setLanguage("en");
+      try {
+        localStorage.removeItem("passward.theme");
+        localStorage.removeItem("nook.language");
+      } catch {}
+    } catch (cause) {
+      fail(cause);
+    } finally {
+      setResetting(false);
+      setBusy(false);
     }
   }
   function select(id: string) {
@@ -726,17 +795,22 @@ export default function App() {
               {phase === "open" && (
                 <>
                   <span className="action-divider" />
-                  <IconButton
-                    label={t("settings")}
+                  <button
+                    ref={settingsButton}
+                    type="button"
+                    className="icon-button"
+                    aria-label={t("settings")}
+                    title={t("settings")}
+                    disabled={busy || showSettings}
                     onClick={() =>
                       guard(() => {
-                        setModal("settings");
+                        setShowSettings(true);
                         setError("");
                       })
                     }
                   >
                     <GearSix />
-                  </IconButton>
+                  </button>
                   <IconButton label={t("lock")} onClick={() => void lock()}>
                     <LockSimple />
                   </IconButton>
@@ -747,13 +821,7 @@ export default function App() {
           <WindowControls
             t={t}
             onError={fail}
-            onClose={() => {
-              if (native)
-                guard(() => {
-                  allowClose.current = true;
-                  void getCurrentWindow().close().catch(fail);
-                });
-            }}
+            onClose={quit}
           />
         </header>
         {preview && <div className="preview-banner">{t("preview")}</div>}
@@ -774,14 +842,39 @@ export default function App() {
           <Auth
             key={exists ? "unlock" : "create"}
             exists={exists}
-            onUnlock={(password) => void authenticate(password)}
+            onUnlock={(password, enableCloud) => void authenticate(password, enableCloud)}
+            onClearError={() => setError("")}
+            onRestored={() => {
+              setExists(true);
+              message("cloudRestored");
+            }}
             extensionInstall={<ExtensionInstall t={t} />}
             t={t}
             error={error}
-            busy={busy}
+            busy={busy || resetting}
           />
         )}
-        {phase === "open" && (
+        {phase === "open" && showSettings && (
+          <SettingsPage
+            updates={updates}
+            t={t}
+            language={language}
+            busy={busy}
+            error={modal ? "" : error}
+            run={request}
+            onBusy={(value) => {
+              if (renderedEpoch === epoch.current) setBusy(value);
+            }}
+            onError={fail}
+            onMessage={message}
+            onBack={closeSettings}
+            onModal={(value) => {
+              setError("");
+              setModal(value);
+            }}
+          />
+        )}
+        {phase === "open" && !showSettings && (
           <>
             <div className="toolbar">
               <div className="search-field">
@@ -1081,7 +1174,16 @@ export default function App() {
         </MotionPresence>
         {phase === "open" && (
           <MotionPresence>
-            {modal && (
+            {modal === "reset" ? (
+              <ResetDialog
+                key="reset"
+                t={t}
+                busy={resetting}
+                error={error}
+                onClose={closeModal}
+                onReset={resetLocal}
+              />
+            ) : modal && (
               <VaultDialogs
                 key={modal}
                 modal={modal}
@@ -1096,10 +1198,6 @@ export default function App() {
                 }}
                 onError={fail}
                 onClose={closeModal}
-                onModal={(value) => {
-                  setError("");
-                  setModal(value);
-                }}
                 onMessage={message}
                 onImported={() => {
                   void securityRefresh().catch(fail);
@@ -1119,7 +1217,7 @@ export default function App() {
         )}
         {phase === "open" && (
           <MotionPresence>
-            {browserFill && !modal && (
+            {browserFill && !showSettings && !modal && (
               <BrowserFillDialog
                 key={browserFill.id}
                 request={browserFill}
@@ -1133,7 +1231,7 @@ export default function App() {
         )}
         {phase === "open" && (
           <MotionPresence>
-            {browserSave && !modal && !browserFill && (
+            {browserSave && !showSettings && !modal && !browserFill && (
               <BrowserSaveDialog
                 key={browserSave.id}
                 request={browserSave}
@@ -1145,6 +1243,12 @@ export default function App() {
             )}
           </MotionPresence>
         )}
+        <UpdateWidget
+          {...updates}
+          hidden={!!modal || !!browserFill || !!browserSave || phase === "loading"}
+          installDisabled={busy}
+          onInstall={() => guard(updates.install)}
+        />
       </div>
     </IconContext.Provider>
   );

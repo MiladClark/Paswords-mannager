@@ -1,4 +1,4 @@
-use super::{HOST, MAX_MESSAGE, Request, extension_origin};
+use super::{HOST, MAX_MESSAGE, Request, extension_identity, extension_origin_allowed};
 use crate::vault::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -249,7 +249,7 @@ pub async fn exchange_at(
     read_frame(&mut pipe).await
 }
 pub fn native_host(caller: &str) {
-    if caller != extension_origin() {
+    if !extension_origin_allowed(caller) {
         return;
     }
     #[cfg(windows)]
@@ -313,7 +313,8 @@ pub fn register(executable: &Path, directory: &Path) -> Result<()> {
         use std::os::windows::process::CommandExt;
         std::fs::create_dir_all(directory).map_err(|_| "browserUnavailable")?;
         let path = directory.join(format!("{HOST}.json"));
-        let data = json!({"name":HOST,"description":"PassWards browser connection","path":executable,"type":"stdio","allowed_origins":[extension_origin()]});
+        let origins: Vec<_> = extension_identity().origins().collect();
+        let data = json!({"name":HOST,"description":"PassWards browser connection","path":executable,"type":"stdio","allowed_origins":origins});
         std::fs::write(
             &path,
             serde_json::to_vec_pretty(&data).map_err(|_| "storageError")?,

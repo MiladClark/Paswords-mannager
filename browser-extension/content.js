@@ -3,8 +3,7 @@
   let host,
     button,
     panel,
-    timer,
-    last = "";
+    timer;
   let capture = null,
     offered = "";
   const edited = new WeakSet();
@@ -240,10 +239,7 @@
     for (const input of inputs) edited.delete(input);
     if (candidate) {
       void send({ type: "captureLogin", ...candidate })
-        .then(() => {
-          last = "";
-          void scan();
-        })
+        .then(() => void scan())
         .catch(() => {});
     } else {
       const g = group();
@@ -500,7 +496,7 @@
       for (const account of accounts) {
         const row = action(
           "",
-          async (item) => {
+          async () => {
             for (const b of panel.querySelectorAll("button")) b.disabled = true;
             feedback.textContent = "Approve the fill in PassWards…";
             try {

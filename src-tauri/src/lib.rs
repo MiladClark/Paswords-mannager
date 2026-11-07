@@ -1,8 +1,11 @@
 mod browser;
 mod device_protection;
 mod memory;
+mod reset;
 mod host_security;
 mod backups;
+mod cloud;
+mod updates;
 mod vault;
 pub use browser::transport::native_host;
 
@@ -30,9 +33,24 @@ async fn prepare_browser_extension(app: tauri::AppHandle, browser: String) -> va
     let host_directory = directory.parent().ok_or("storageError")?.to_path_buf();
     let executable = std::env::current_exe().map_err(|_| "browserUnavailable")?;
     tauri::async_runtime::spawn_blocking(move || {
+        let selected_exe = selected.executable();
+        if let Some(url) = selected.store_url() {
+            if let Some(selected_exe) = &selected_exe {
+                browser::transport::register(&executable, &host_directory)?;
+                std::process::Command::new(selected_exe)
+                    .arg(url)
+                    .spawn()
+                    .map_err(|_| "browserUnavailable")?;
+            }
+            return Ok(serde_json::json!({
+                "store": true,
+                "browserInstalled": selected_exe.is_some(),
+                "preview": false,
+            }));
+        }
         browser::setup::extract(&directory)?;
         browser::transport::register(&executable, &host_directory)?;
-        Ok(serde_json::json!({"directory":directory,"browserInstalled":selected.installed(),"preview":false}))
+        Ok(serde_json::json!({"directory":directory,"browserInstalled":selected_exe.is_some(),"preview":false}))
     }).await.map_err(|_| "browserUnavailable")?
 }
 #[tauri::command]
@@ -462,12 +480,17 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(updates::UpdaterState::default())
         .manage(ClipboardState::default())
         .setup(|app| {
             let path = app.path().app_data_dir()?.join("vault.sqlite3");
             let vault = Vault::open(path).map_err(std::io::Error::other)?;
             let state = VaultState(Arc::new(Mutex::new(vault)));
             app.manage(state.clone());
+            let cloud = cloud::Cloud::open(app.path().app_data_dir()?.join("cloud-backup.device"));
+            app.manage(cloud.clone());
+            cloud.start_worker(state.clone(), app.handle().clone());
             let integration = BrowserIntegration(Arc::new(Mutex::new(
                 browser::BrowserState::open(app.path().app_data_dir()?.join("browsers.device")),
             )));
@@ -561,6 +584,18 @@ pub fn run() {
             vault_status,
             automatic_backup_info,
             configure_automatic_backups,
+            cloud::cloud_info,
+            cloud::cloud_connect,
+            cloud::reset_local,
+            cloud::cloud_enable,
+            cloud::cloud_backup_now,
+            cloud::cloud_list,
+            cloud::cloud_restore,
+            updates::update_check,
+            updates::update_download,
+            updates::update_cancel,
+            updates::update_install,
+            updates::update_open_downloads,
             create_vault,
             unlock_vault,
             lock_vault,

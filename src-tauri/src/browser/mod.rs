@@ -17,19 +17,65 @@ use zeroize::{Zeroizing, Zeroize, ZeroizeOnDrop};
 
 pub const HOST: &str = "com.passward.bridge";
 pub const MAX_MESSAGE: usize = 64 * 1024;
-pub fn extension_origin() -> String {
-    let identity: Value =
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExtensionIdentity {
+    id: String,
+    edge_addons_id: Option<String>,
+}
+
+impl ExtensionIdentity {
+    fn store_id(&self) -> Option<&str> {
+        self.edge_addons_id.as_deref().filter(|id| {
+            id.len() == 32 && id.bytes().all(|byte| (b'a'..=b'p').contains(&byte))
+        })
+    }
+
+    fn origins(&self) -> impl Iterator<Item = String> + '_ {
+        std::iter::once(self.id.as_str())
+            .chain(self.store_id().filter(|id| *id != self.id))
+            .map(|id| format!("chrome-extension://{id}/"))
+    }
+}
+
+fn extension_identity() -> &'static ExtensionIdentity {
+    static IDENTITY: std::sync::OnceLock<ExtensionIdentity> = std::sync::OnceLock::new();
+    IDENTITY.get_or_init(|| {
         serde_json::from_str(include_str!("../../../browser-extension/identity.json"))
-            .expect("extension identity");
-    format!(
-        "chrome-extension://{}/",
-        identity["id"].as_str().expect("extension id")
-    )
+            .expect("extension identity")
+    })
+}
+
+pub(crate) fn extension_origin_allowed(caller: &str) -> bool {
+    extension_identity().origins().any(|origin| origin == caller)
+}
+
+#[cfg(all(test, windows))]
+fn extension_origin() -> String {
+    format!("chrome-extension://{}/", extension_identity().id)
 }
 
 #[cfg(all(test, windows))]
 mod tests {
     use super::*;
+    #[test]
+    fn store_identity_adds_only_the_exact_configured_origin() {
+        let mut identity = ExtensionIdentity {
+            id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+            edge_addons_id: Some("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".into()),
+        };
+        assert_eq!(
+            identity.origins().collect::<Vec<_>>(),
+            [
+                "chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/",
+                "chrome-extension://bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/",
+            ]
+        );
+        identity.edge_addons_id = Some("https://example.com/".into());
+        assert_eq!(identity.origins().count(), 1);
+        identity.edge_addons_id = Some(identity.id.clone());
+        assert_eq!(identity.origins().count(), 1);
+    }
     fn message(op: &str, token: Option<&str>, extra: Value) -> Request {
         let mut data =
             json!({"v":1,"requestId":uuid::Uuid::new_v4().to_string(),"op":op,"token":token});
@@ -481,7 +527,9 @@ impl BrowserState {
         Ok(())
     }
     pub fn handle(&mut self, vault: &mut Vault, caller: &str, r: Request) -> Result<Value> {
-        if caller != extension_origin() || r.v != 1 || uuid::Uuid::parse_str(&r.request_id).is_err()
+        if !extension_origin_allowed(caller)
+            || r.v != 1
+            || uuid::Uuid::parse_str(&r.request_id).is_err()
         {
             return Err("browserDenied".into());
         }
