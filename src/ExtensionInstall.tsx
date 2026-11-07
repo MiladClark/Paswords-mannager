@@ -5,7 +5,7 @@ import { call } from "./api";
 import { en } from "./i18n";
 import { Dialog, type Translate } from "./ui";
 
-type Browser = "chrome" | "edge";
+type Browser = "chrome" | "edge" | "brave";
 type Prepared = {
   directory: string;
   browserInstalled: boolean;
@@ -25,9 +25,14 @@ export default function ExtensionInstall({ t }: { t: Translate }) {
     },
     [],
   );
-  const name = browser === "chrome" ? "Chrome" : "Edge";
+  const name =
+    browser === "chrome" ? "Chrome" : browser === "edge" ? "Edge" : "Brave";
   const page =
-    browser === "chrome" ? "chrome://extensions" : "edge://extensions";
+    browser === "chrome"
+      ? "chrome://extensions"
+      : browser === "edge"
+        ? "edge://extensions"
+        : "brave://extensions";
   function fail(cause: unknown) {
     const key = String(cause);
     setError(t(key in en ? (key as keyof typeof en) : "browserUnavailable"));
@@ -64,7 +69,7 @@ export default function ExtensionInstall({ t }: { t: Translate }) {
     <section className="extension-install" aria-label={t("installExtension")}>
       <span>{t("installExtension")}</span>
       <div className="extension-install-buttons">
-        {(["chrome", "edge"] as const).map((value) => (
+        {(["chrome", "edge", "brave"] as const).map((value) => (
           <button
             key={value}
             type="button"
@@ -72,7 +77,11 @@ export default function ExtensionInstall({ t }: { t: Translate }) {
             onClick={() => void prepare(value)}
           >
             <Globe size={15} />
-            {value === "chrome" ? "Chrome" : "Edge"}
+            {value === "chrome"
+              ? "Chrome"
+              : value === "edge"
+                ? "Edge"
+                : "Brave"}
           </button>
         ))}
       </div>

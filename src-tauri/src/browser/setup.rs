@@ -1,18 +1,28 @@
 //! Bundled, fixed-path extension resources. Does not modify browser profiles or policies.
 use std::path::{Path, PathBuf};
 
-pub enum Browser { Chrome, Edge }
+pub enum Browser { Chrome, Edge, Brave }
 impl Browser {
     pub fn parse(value: &str) -> Result<Self, String> {
-        match value { "chrome" => Ok(Self::Chrome), "edge" => Ok(Self::Edge), _ => Err("invalidEntry".into()) }
+        match value {
+            "chrome" => Ok(Self::Chrome),
+            "edge" => Ok(Self::Edge),
+            "brave" => Ok(Self::Brave),
+            _ => Err("invalidEntry".into()),
+        }
     }
     pub fn page(&self) -> &'static str {
-        match self { Self::Chrome => "chrome://extensions", Self::Edge => "edge://extensions" }
+        match self {
+            Self::Chrome => "chrome://extensions",
+            Self::Edge => "edge://extensions",
+            Self::Brave => "brave://extensions",
+        }
     }
     pub fn installed(&self) -> bool {
         let relative = match self {
             Self::Chrome => "Google/Chrome/Application/chrome.exe",
             Self::Edge => "Microsoft/Edge/Application/msedge.exe",
+            Self::Brave => "BraveSoftware/Brave-Browser/Application/brave.exe",
         };
         ["PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA"].iter()
             .filter_map(std::env::var_os).any(|root| PathBuf::from(root).join(relative).is_file())
@@ -48,6 +58,7 @@ mod tests {
     fn browser_input_is_allowlisted() {
         assert!(Browser::parse("chrome").is_ok());
         assert_eq!(Browser::parse("edge").unwrap_or_else(|_| panic!()).page(), "edge://extensions");
+        assert_eq!(Browser::parse("brave").unwrap_or_else(|_| panic!()).page(), "brave://extensions");
         assert!(Browser::parse("../../outside").is_err());
     }
     #[test]

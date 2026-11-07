@@ -1,4 +1,4 @@
-import { chromium } from "@playwright/test";
+import { chromium, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { mkdtemp, readFile, writeFile, cp, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -213,12 +213,11 @@ try {
   await page.bringToFront();
   const message = (body) =>
     popup.evaluate((body) => chrome.runtime.sendMessage(body), body);
-  assert.equal(
-    (await message({ type: "pair", code: ready.code, browser: "Edge" })).ok,
-    true,
-  );
+  await expect
+    .poll(async () => (await message({ type: "state" })).data.paired)
+    .toBe(true);
   check(
-    "Real runtime → native messaging → named pipe → temporary vault pairing",
+    "Popup automatically connects through native messaging and the named pipe without a pairing code",
   );
   const originalToken = await worker.evaluate(
     async () => (await chrome.storage.local.get("token")).token,

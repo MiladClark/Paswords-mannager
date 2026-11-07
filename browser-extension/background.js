@@ -41,7 +41,11 @@ async function native(op, extra = {}) {
       };
       const reply = (result) => {
         clear();
-        if (result?.ok) resolve(result.data);
+        if (result?.ok && ["pair", "autoConnect"].includes(op)) {
+          void chrome.storage.local
+            .set({ token: result.data.token })
+            .then(() => resolve(result.data), reject);
+        } else if (result?.ok) resolve(result.data);
         else if (result?.error === "browserUnpaired") {
           void chrome.storage.local
             .remove("token")
@@ -230,18 +234,31 @@ async function fill(context, id) {
   }
 }
 const captures = createLoginCapture({ native, source, origin });
+function getBrowserName() {
+  if (navigator.userAgent.includes("Edg/")) return "Edge";
+  if (navigator.brave && typeof navigator.brave.isBrave === "function")
+    return "Brave";
+  return "Chrome";
+}
 async function handle(message, sender) {
   await ready;
   const popup =
     sender.id === chrome.runtime.id &&
     sender.url === chrome.runtime.getURL("popup.html");
+  if (message?.type === "autoConnect" && popup) {
+    const browser = message.browser || getBrowserName();
+    const result = await native("autoConnect", { browser });
+    return { paired: true, token: result.token };
+  }
   if (message?.type === "pair" && popup) {
     const { token } = await chrome.storage.local.get("token");
     if (token) return { paired: true };
     const code = String(message.code || "");
     if (!/^\d{6}$/.test(code)) throw Error("browserPairCode");
-    const result = await native("pair", { code, browser: message.browser });
-    await chrome.storage.local.set({ token: result.token });
+    await native("pair", {
+      code,
+      browser: message.browser || getBrowserName(),
+    });
     return { paired: true };
   }
   if (

@@ -1,10 +1,11 @@
 {
   "name": "passward",
   "private": true,
-  "version": "0.3.1",
+  "version": "0.3.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "typecheck": "tsc --noEmit && tsc --project tsconfig.node.json --noEmit",
     "build": "tsc && vite build && node scripts/check-bundle.mjs",
     "build:app": "tauri build --no-bundle",
     "check:security": "powershell -NoProfile -File scripts/check-security.ps1",

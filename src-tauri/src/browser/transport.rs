@@ -319,7 +319,7 @@ pub fn register(executable: &Path, directory: &Path) -> Result<()> {
             serde_json::to_vec_pretty(&data).map_err(|_| "storageError")?,
         )
         .map_err(|_| "storageError")?;
-        for browser in ["Google\\Chrome", "Microsoft\\Edge"] {
+        for browser in ["Google\\Chrome", "Microsoft\\Edge", "BraveSoftware\\Brave-Browser"] {
             let key = format!("HKCU\\Software\\{browser}\\NativeMessagingHosts\\{HOST}");
             let status = std::process::Command::new("reg.exe")
                 .args(["ADD", &key, "/ve", "/t", "REG_SZ", "/d"])

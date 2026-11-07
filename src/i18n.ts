@@ -12,12 +12,12 @@ export const en = {
   extensionLoadFolder:
     "Turn on Developer mode, choose Load unpacked, and select the extension folder below.",
   extensionPairNext:
-    "Then unlock the app and use Settings → Browsers → Pair browser to connect the extension.",
+    "Then unlock the app. The extension connects and syncs automatically without manual codes.",
   extensionOpenFolder: "Open extension folder",
   extensionRetry: "Try again",
   browsers: "Browsers",
   browserHelp:
-    "Connect Chrome or Edge. The extension proposes matching accounts; approve each fill here.",
+    "Connect Chrome, Edge, or Brave. The extension connects automatically when the app is open and proposes matching accounts.",
   enableBrowserBridge: "Enable browser connection",
   repairBrowserBridge: "Repair connection",
   pairBrowser: "Pair browser",
@@ -310,12 +310,12 @@ export const fa: Record<Key, string> = {
   extensionLoadFolder:
     "Developer mode را روشن کنید، Load unpacked را بزنید و پوشهٔ افزونه را که پایین آمده انتخاب کنید.",
   extensionPairNext:
-    "سپس قفل اپ را باز کنید و از تنظیمات ← مرورگرها ← جفت‌سازی مرورگر، افزونه را متصل کنید.",
+    "سپس قفل اپ را باز کنید؛ افزونه به صورت خودکار و بدون نیاز به کد به اپلیکیشن متصل و همگام می‌شود.",
   extensionOpenFolder: "باز کردن پوشهٔ افزونه",
   extensionRetry: "تلاش دوباره",
   browsers: "مرورگرها",
   browserHelp:
-    "کروم یا اج را متصل کنید. افزونه حساب‌های مرتبط را پیشنهاد می‌دهد؛ پرکردن را اینجا تأیید کنید.",
+    "کروم، اج یا بریو را متصل کنید. افزونه با باز شدن اپلیکیشن به صورت خودکار متصل و همگام می‌شود و پرکردن را پیشنهاد می‌دهد.",
   enableBrowserBridge: "فعال‌کردن اتصال مرورگر",
   repairBrowserBridge: "ترمیم اتصال",
   pairBrowser: "جفت‌سازی مرورگر",

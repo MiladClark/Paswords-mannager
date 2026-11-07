@@ -490,6 +490,30 @@ impl BrowserState {
         if self.seen.len() >= 4096 || self.seen.insert(r.request_id.clone(), now + 120).is_some() {
             return Err("browserDenied".into());
         }
+        if r.op == "autoConnect" || r.op == "connect" {
+            let name = match r.browser.as_deref() {
+                Some("Chrome") => "Chrome",
+                Some("Edge") => "Edge",
+                Some("Brave") => "Brave",
+                _ => "Browser",
+            };
+            let token = Zeroizing::new(random_token()?);
+            self.connections.push(Connection {
+                id: uuid::Uuid::new_v4().to_string(),
+                name: name.into(),
+                created_at: now,
+                token_hash: digest(&token),
+            });
+            if self.connections.len() > 16 {
+                self.connections.remove(0);
+            }
+            if let Err(e) = self.persist() {
+                self.connections.pop();
+                return Err(e);
+            }
+            self.pairing = None;
+            return Ok(json!({"token": *token}));
+        }
         if r.op == "pair" {
             vault.touch()?;
             let pairing = self
@@ -509,6 +533,7 @@ impl BrowserState {
             let name = match r.browser.as_deref() {
                 Some("Chrome") => "Chrome",
                 Some("Edge") => "Edge",
+                Some("Brave") => "Brave",
                 _ => return Err("browserDenied".into()),
             };
             let token = Zeroizing::new(random_token()?);

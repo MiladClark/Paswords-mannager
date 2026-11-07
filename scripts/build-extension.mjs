@@ -9,7 +9,7 @@ const identity = JSON.parse(
 const manifest = {
   manifest_version: 3,
   name: "PassWards",
-  version: "0.5.3",
+  version: "0.5.4",
   description:
     "Save, update and fill logins with your offline PassWards vault. Desktop approval required.",
   key: identity.key,

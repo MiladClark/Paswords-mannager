@@ -21,7 +21,7 @@ Create a vault with a strong master passphrase. It cannot be reset or recovered.
 Your encrypted vault is stored separately in your Windows user profile:
 %APPDATA%\com.parag.nook\vault.sqlite3
 
-For Chrome or Edge: open Settings > Browsers in PassWards and follow extension setup.
+For Chrome, Edge, or Brave: open Settings > Browsers in PassWards and follow extension setup.
 If moving from another EXE location, use Repair connection in that same app.
 
 This is an unsigned early release and has not had an independent security audit.

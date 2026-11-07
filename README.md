@@ -40,11 +40,11 @@ There is no artificial item-count limit. Available storage, memory and hardware 
 
 The live database is in the per-user Tauri application-data directory, normally `%APPDATA%\com.parag.nook\vault.sqlite3` on Windows. The identifier and encryption format retain their old name for compatibility. Do not edit it by hand or replace an active database. The app enforces a single running instance.
 
-## Chrome and Edge
+## Chrome, Edge and Brave
 
-Version 0.3 includes the Manifest V3 extension in `browser-extension/`. Load that folder with Developer mode → Load unpacked in `chrome://extensions` or `edge://extensions`. It is not published to either extension store yet.
+Version 0.3 includes the Manifest V3 extension in `browser-extension/`. Load that folder with Developer mode → Load unpacked in `chrome://extensions`, `edge://extensions` or `brave://extensions`. It is not published to an extension store yet.
 
-Open PassWards 0.3, then Settings → Browsers → Enable browser connection → Pair browser. Enter the one-time six-digit code in the extension. Pair each browser profile separately. If you move the executable, use Repair connection in that copy of the app.
+Open PassWards, then Settings → Browsers to prepare the extension. Opening the extension popup automatically connects that browser profile without a manual code. Filling and saving still require desktop approval. If you move the executable, use Repair connection in that copy of the app.
 
 Open a login page, select a matching account and choose Fill. Approve the domain/account in the desktop app with the master password. Only that account is released, once, within a 90-second request window. The extension fills visible fields; automatic sign-in is off by default and can be enabled in Autofill settings for valid same-origin POST forms. After the browser grants the required HTTP/HTTPS site access once, login forms are detected automatically. On a focused login page the toolbar popup opens once; if the browser blocks it, an inline account picker appears beside the form. Dynamic forms are detected too. Arrow keys and Enter select an account; Escape closes the menu. The popup can search matching accounts. Pairing persists across browser/app restarts; only Settings → Browsers in the desktop app can revoke it.
 
@@ -66,6 +66,7 @@ pnpm tauri dev
 The native app is required for the real vault. Opening `http://localhost:1420` in a normal browser does not expose the Rust bridge. An explicit development-only `?preview=1` route uses fictional in-memory UI fixtures. It never opens the real vault; those fixtures and their adapter are removed from the production bundle.
 
 ```powershell
+pnpm typecheck
 pnpm build
 pnpm test:core
 pnpm check:core

@@ -1,11 +1,10 @@
-# PassWards — Chrome / Edge
+# PassWards — Chrome / Edge / Brave
 
 ## نصب
 
-1. نسخهٔ ۰٫۳ PassWards را اجرا و خزانه را باز کنید. نسخهٔ قدیمی در حال اجرا را ابتدا ببندید.
-2. در Chrome آدرس `chrome://extensions` و در Edge آدرس `edge://extensions` را باز کنید. Developer mode را روشن کنید، **Load unpacked** را بزنید و پوشه‌ای را انتخاب کنید که `manifest.json` داخل آن است. این نسخه هنوز در فروشگاه مرورگر منتشر نشده است.
-3. در اپ: **Settings → Browsers → Enable browser connection**. سپس **Pair browser** را بزنید.
-4. افزونهٔ PassWards را از نوار مرورگر باز کنید، مرورگر را انتخاب و کد شش‌رقمی اپ را وارد کنید. کد یک‌بارمصرف و دو دقیقه معتبر است. برای هر مرورگر یا پروفایل جداگانه جفت‌سازی کنید.
+1. نسخهٔ جدید PassWards را اجرا و خزانه را باز کنید.
+2. در Chrome آدرس `chrome://extensions`، در Edge آدرس `edge://extensions` و در Brave آدرس `brave://extensions` را باز کنید. گزینهٔ Developer mode را روشن کنید، **Load unpacked** را بزنید و پوشهٔ افزونه را انتخاب کنید.
+3. در اپ: **Settings → Browsers**. افزونه با باز شدن و اجرای اپ به‌صورت خودکار متصل می‌شود و نیازی به وارد کردن کد جفت‌سازی دستی ۶ رقمی نیست.
 
 اتصال Native Messaging برای حساب فعلی Windows ثبت می‌شود و دسترسی ادمین نمی‌خواهد. اگر فایل اجرایی اپ را جابه‌جا کردید یا نسخهٔ نصب‌شدهٔ دیگری را اجرا کردید، **Repair connection** را در همان اپ بزنید. اسکریپت اختیاری `Install-Bridge.ps1 -AppPath 'C:\path\Passward.exe'` همین ثبت را انجام می‌دهد؛ نیاز به تغییر ExecutionPolicy کل سیستم نیست.
 

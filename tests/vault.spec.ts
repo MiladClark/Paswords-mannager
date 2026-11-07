@@ -4,6 +4,7 @@ import AxeBuilder from "@axe-core/playwright";
 // Only fictional, ephemeral preview data is used. Real desktop vaults are not opened.
 async function enter(page: Page, suffix = "") {
   await page.goto("/?preview=1" + suffix);
+  await expect(page.locator(".devtune-splash")).toHaveCount(0);
   await page
     .getByLabel("Master password", { exact: true })
     .fill("A fictional test passphrase");
@@ -20,6 +21,7 @@ test("create form catches mismatch; locking removes visible vault state", async 
   page,
 }) => {
   await page.goto("/?preview=1");
+  await expect(page.locator(".devtune-splash")).toHaveCount(0);
   await page
     .getByLabel("Master password", { exact: true })
     .fill("A fictional test passphrase");

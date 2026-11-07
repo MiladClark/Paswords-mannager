@@ -2,29 +2,143 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>PassWards</title>
     <link rel="stylesheet" href="popup.css" />
   </head>
   <body>
-    <header>
-      <img src="icons/48.png" alt="" width="28" height="28" /><strong
-        >PassWards</strong
-      ><span></span
-      ><button id="theme" class="icon" aria-label="Switch theme">◐</button
-      ><button id="language" class="icon" aria-label="Language" hidden>
-        فا
-      </button>
+    <header class="app-header">
+      <div class="brand">
+        <img
+          src="icons/48.png"
+          alt="PassWards"
+          width="20"
+          height="20"
+          class="brand-logo"
+        />
+        <span class="brand-name">PassWards</span>
+      </div>
+      <div class="header-actions">
+        <div
+          id="connection-badge"
+          class="connection-pill"
+          role="status"
+          title="Connection status"
+        >
+          <span class="status-dot"></span>
+          <span class="status-label">Checking…</span>
+        </div>
+        <button
+          id="theme"
+          class="icon-btn"
+          aria-label="Toggle theme"
+          title="Toggle theme"
+        >
+          <svg
+            class="theme-icon-dark"
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <circle cx="12" cy="12" r="5" />
+            <path
+              d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"
+            />
+          </svg>
+          <svg
+            class="theme-icon-light"
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+          </svg>
+        </button>
+        <button
+          id="refresh"
+          class="icon-btn"
+          aria-label="Refresh"
+          title="Refresh"
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path
+              d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"
+            />
+          </svg>
+        </button>
+        <button
+          id="language"
+          class="icon-btn text-lang"
+          aria-label="Language"
+          hidden
+        >
+          فا
+        </button>
+      </div>
     </header>
-    <main>
+
+    <main class="app-main">
       <div id="status" role="status"></div>
-      <div id="content"></div>
-      <p id="error" role="alert" hidden></p>
+      <div id="site-bar" class="site-bar" hidden>
+        <div class="site-info">
+          <div class="site-icon-wrapper">
+            <img
+              id="site-favicon"
+              class="site-favicon"
+              alt=""
+              width="14"
+              height="14"
+              hidden
+            />
+            <span id="site-monogram" class="site-monogram">🌐</span>
+          </div>
+          <span id="site-domain" class="site-domain"></span>
+        </div>
+        <span id="site-account-count" class="site-badge"></span>
+      </div>
+
+      <div id="content" class="content-area"></div>
+      <p id="error" class="error-banner" role="alert" hidden></p>
     </main>
-    <footer>
-      <button id="open" class="text"></button
-      ><button id="refresh" class="text"></button>
+
+    <footer class="app-footer">
+      <button id="open" class="footer-btn">
+        <svg
+          width="13"
+          height="13"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+          <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+        </svg>
+        <span>Open PassWards</span>
+      </button>
     </footer>
+
     <script type="module" src="popup.js"></script>
   </body>
 </html>
